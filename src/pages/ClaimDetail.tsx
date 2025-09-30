@@ -68,40 +68,53 @@ export default function ClaimDetail() {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setUploading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      // Upload file to storage
-      const fileExt = file.name.split(".").pop();
-      const filePath = `${id}/${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from("documents")
-        .upload(filePath, file);
+      const fileArray = Array.from(files);
+      let successCount = 0;
+      let errorCount = 0;
 
-      if (uploadError) throw uploadError;
+      for (const file of fileArray) {
+        try {
+          // Upload file to storage
+          const fileExt = file.name.split(".").pop();
+          const filePath = `${id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from("documents")
+            .upload(filePath, file);
 
-      // Create document record
-      const { error: dbError } = await supabase.from("documents").insert({
-        claim_id: id,
-        file_name: file.name,
-        file_path: filePath,
-        file_type: file.type,
-        file_size: file.size,
-        uploaded_by: user.id,
-        status: "uploaded",
-      });
+          if (uploadError) throw uploadError;
 
-      if (dbError) throw dbError;
+          // Create document record
+          const { error: dbError } = await supabase.from("documents").insert({
+            claim_id: id,
+            file_name: file.name,
+            file_path: filePath,
+            file_type: file.type,
+            file_size: file.size,
+            uploaded_by: user.id,
+            status: "uploaded",
+          });
+
+          if (dbError) throw dbError;
+          successCount++;
+        } catch (error) {
+          console.error(`Error uploading ${file.name}:`, error);
+          errorCount++;
+        }
+      }
 
       toast({
-        title: "Úspech",
-        description: "Dokument bol nahraný",
+        title: successCount > 0 ? "Úspech" : "Chyba",
+        description: `Nahrané: ${successCount}, Chyby: ${errorCount}`,
+        variant: errorCount > 0 ? "destructive" : "default",
       });
 
       setDialogOpen(false);
@@ -115,6 +128,34 @@ export default function ClaimDetail() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleBatchProcess = async () => {
+    if (documents.length === 0) {
+      toast({
+        title: "Žiadne dokumenty",
+        description: "Najprv nahrajte dokumenty",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const unprocessedDocs = documents.filter(doc => doc.status === "uploaded");
+    if (unprocessedDocs.length === 0) {
+      toast({
+        title: "Všetky dokumenty už sú spracované",
+        variant: "default",
+      });
+      return;
+    }
+
+    toast({
+      title: "Hromadné spracovanie spustené",
+      description: `Spracováva sa ${unprocessedDocs.length} dokumentov...`,
+    });
+
+    // Redirect to first document for processing
+    window.location.href = `/claim/${id}/batch-process`;
   };
 
   if (loading) {
@@ -196,13 +237,14 @@ export default function ClaimDetail() {
             <CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle>Dokumenty</CardTitle>
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Nahrať
-                    </Button>
-                  </DialogTrigger>
+                <div className="flex gap-2">
+                  <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <Upload className="h-4 w-4 mr-2" />
+                        Nahrať
+                      </Button>
+                    </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Nahrať dokument</DialogTitle>
@@ -211,20 +253,27 @@ export default function ClaimDetail() {
                       </DialogDescription>
                     </DialogHeader>
                     <div>
-                      <Label htmlFor="file">Súbor</Label>
+                      <Label htmlFor="file">Súbory (môžete vybrať viac naraz)</Label>
                       <Input
                         id="file"
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png,.tiff"
                         onChange={handleFileUpload}
                         disabled={uploading}
+                        multiple
                       />
                       <p className="text-sm text-muted-foreground mt-2">
-                        Podporované formáty: PDF, JPG, PNG, TIFF
+                        Podporované formáty: PDF, JPG, PNG, TIFF (max 20MB na súbor)
                       </p>
                     </div>
                   </DialogContent>
                 </Dialog>
+                {documents.length > 0 && (
+                  <Button size="sm" variant="secondary" onClick={handleBatchProcess}>
+                    Spracovať všetky
+                  </Button>
+                )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
