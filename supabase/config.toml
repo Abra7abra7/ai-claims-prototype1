@@ -11,3 +11,6 @@ verify_jwt = true
 
 [functions.anonymize-document]
 verify_jwt = true
+
+[functions.clean-anonymized-text]
+verify_jwt = true

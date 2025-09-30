@@ -109,7 +109,7 @@ export default function DocumentProcessor() {
 
       await supabase
         .from("documents")
-        .update({ status: "ready_for_review" })
+        .update({ status: "anonymized" })
         .eq("id", docId);
 
       await supabase
@@ -119,11 +119,51 @@ export default function DocumentProcessor() {
 
       setEditedText(data.text);
 
-      toast({ title: "Anonymizácia dokončená", description: "Citlivé údaje boli odstránené" });
+      toast({ 
+        title: "Anonymizácia dokončená", 
+        description: "Citlivé údaje boli odstránené. Teraz môžete vyčistiť text." 
+      });
+
+      // Auto-run text cleaning
+      await cleanAnonymizedText();
+    } catch (error: any) {
+      toast({ title: "Chyba anonymizácie", description: error.message, variant: "destructive" });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const cleanAnonymizedText = async () => {
+    if (!docId) return;
+    setProcessing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("clean-anonymized-text", {
+        body: { documentId: docId },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      await supabase
+        .from("documents")
+        .update({ status: "ready_for_review" })
+        .eq("id", docId);
+
+      await supabase
+        .from("processed_documents")
+        .update({ anonymized_text: data.cleanedText })
+        .eq("document_id", docId);
+
+      setEditedText(data.cleanedText);
+
+      toast({ 
+        title: "Text vyčistený", 
+        description: "Gramatické chyby a preklepy boli opravené" 
+      });
 
       await fetchDocument();
     } catch (error: any) {
-      toast({ title: "Chyba anonymizácie", description: error.message, variant: "destructive" });
+      toast({ title: "Chyba pri čistení textu", description: error.message, variant: "destructive" });
     } finally {
       setProcessing(false);
     }
