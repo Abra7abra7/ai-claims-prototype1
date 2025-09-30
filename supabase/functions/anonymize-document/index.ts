@@ -21,9 +21,9 @@ serve(async (req) => {
     console.log(`Anonymizing document: ${documentId}`);
 
     // Get Google Cloud credentials
-    const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS');
+    const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS') || Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON');
     if (!googleCredentials) {
-      throw new Error('GOOGLE_CLOUD_CREDENTIALS not configured');
+      throw new Error('Google service account JSON not configured in secrets (GOOGLE_CLOUD_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON)');
     }
 
     const credentials = JSON.parse(googleCredentials);

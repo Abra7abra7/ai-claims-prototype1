@@ -21,9 +21,9 @@ serve(async (req) => {
     console.log(`Processing OCR for document: ${documentId}`);
 
     // Get Google Cloud credentials
-    const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS');
+    const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS') || Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON');
     if (!googleCredentials) {
-      throw new Error('GOOGLE_CLOUD_CREDENTIALS not configured');
+      throw new Error('Google service account JSON not configured in secrets (GOOGLE_CLOUD_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON)');
     }
 
     const credentials = JSON.parse(googleCredentials);
@@ -36,7 +36,7 @@ serve(async (req) => {
     // Get document from database
     const { data: document, error: docError } = await supabase
       .from('documents')
-      .select('*, claims(id)')
+      .select('id, file_name, file_type, file_path, claim_id')
       .eq('id', documentId)
       .single();
 
@@ -48,10 +48,10 @@ serve(async (req) => {
     const { data: fileData, error: downloadError } = await supabase
       .storage
       .from('documents')
-      .download(`${document.claims.id}/${document.file_name}`);
+      .download(document.file_path);
 
     if (downloadError || !fileData) {
-      throw new Error(`Failed to download file: ${downloadError?.message}`);
+      throw new Error(`Failed to download file from storage: ${downloadError?.message}`);
     }
 
     // Convert blob to base64
@@ -98,7 +98,7 @@ serve(async (req) => {
       body: JSON.stringify({
         rawDocument: {
           content: base64Content,
-          mimeType: document.file_name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg',
+          mimeType: document.file_type || (document.file_name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
         },
       }),
     });
