@@ -63,116 +63,67 @@ export default function DocumentProcessor() {
   };
 
   const simulateOCR = async () => {
+    if (!docId) return;
     setProcessing(true);
     try {
-      // Simulate OCR processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      const simulatedText = `LEKÁRSKA SPRÁVA
-      
-Pacient: Ján Novák
-Rodné číslo: 850101/1234
-Adresa: Hlavná 123, 811 01 Bratislava
-Telefón: +421 912 345 678
+      const { data, error } = await supabase.functions.invoke("process-document-ocr", {
+        body: { documentId: docId },
+      });
 
-Dátum vyšetrenia: 15. januára 2025
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-Diagnóza: Zlomenina predlaktia vpravo (S52.5)
-
-Anamnéza:
-Pacient prišiel na vyšetrenie po páde z bicykla dňa 14. januára 2025. Udáva bolesť v oblasti pravého predlaktia a obmedzenú pohyblivosť.
-
-Objektívne vyšetrenie:
-Zjavná deformita v oblasti pravého predlaktia, otok, hematóm. Distálna cirkulácia a senzitivita zachovaná.
-
-RTG vyšetrenie:
-Potvrdená zlomenina distálneho rádia s dislokáciou.
-
-Liečba:
-Vykonaná repozícia a imobilizácia sádrovou dlahou. Odporúčaná kontrola u ortopéda po 7 dňoch.
-
-Práceneschopnosť: 6 týždňov
-
-MUDr. Peter Horák
-Traumatológia`;
-
-      // Update document status
+      // Update local state
       await supabase
         .from("documents")
         .update({ status: "ocr_complete" })
         .eq("id", docId);
 
-      // Create or update processed document
-      const { error } = await supabase
+      await supabase
         .from("processed_documents")
-        .upsert({
-          document_id: docId,
-          ocr_text: simulatedText,
-        });
+        .upsert({ document_id: docId, ocr_text: data.text });
 
-      if (error) throw error;
+      toast({ title: "OCR dokončené", description: `Extrahovaných znakov: ${data.characterCount}` });
 
-      toast({
-        title: "OCR dokončené",
-        description: "Text bol extrahovaný z dokumentu",
-      });
-
-      // Start anonymization immediately
-      await simulateAnonymization(simulatedText);
+      // Auto-run anonymization
+      await simulateAnonymization(data.text);
     } catch (error: any) {
-      toast({
-        title: "Chyba",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Chyba OCR", description: error.message, variant: "destructive" });
     } finally {
+      await fetchDocument();
       setProcessing(false);
     }
   };
 
   const simulateAnonymization = async (ocrText: string) => {
+    if (!docId) return;
     setProcessing(true);
     try {
-      // Simulate anonymization
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      
-      const anonymizedText = ocrText
-        .replace(/Ján Novák/g, "[MENO]")
-        .replace(/850101\/1234/g, "[RODNÉ_ČÍSLO]")
-        .replace(/Hlavná 123, 811 01 Bratislava/g, "[ADRESA]")
-        .replace(/\+421 912 345 678/g, "[TELEFÓN]")
-        .replace(/MUDr\. Peter Horák/g, "[LEKÁR]");
+      // Invoke real anonymization
+      const { data, error } = await supabase.functions.invoke("anonymize-document", {
+        body: { documentId: docId },
+      });
 
-      // Update status
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
       await supabase
         .from("documents")
         .update({ status: "ready_for_review" })
         .eq("id", docId);
 
-      // Update processed document
-      const { error } = await supabase
+      await supabase
         .from("processed_documents")
-        .update({
-          anonymized_text: anonymizedText,
-        })
+        .update({ anonymized_text: data.text })
         .eq("document_id", docId);
 
-      if (error) throw error;
+      setEditedText(data.text);
 
-      setEditedText(anonymizedText);
-      
-      toast({
-        title: "Anonymizácia dokončená",
-        description: "Citlivé údaje boli odstránené",
-      });
+      toast({ title: "Anonymizácia dokončená", description: "Citlivé údaje boli odstránené" });
 
-      fetchDocument();
+      await fetchDocument();
     } catch (error: any) {
-      toast({
-        title: "Chyba",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Chyba anonymizácie", description: error.message, variant: "destructive" });
     } finally {
       setProcessing(false);
     }
