@@ -205,10 +205,10 @@ export default function ReportView() {
       <Layout>
         <div className="text-center py-12">
           <p className="text-muted-foreground mb-4">Report nebol nájdený</p>
-          <Link to={`/claim/${id}/document/${docId}`}>
+          <Link to="/">
             <Button variant="outline">
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Späť
+              Späť na dashboard
             </Button>
           </Link>
         </div>
@@ -220,7 +220,7 @@ export default function ReportView() {
     <Layout>
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link to={`/claim/${id}/document/${docId}`}>
+          <Link to="/">
             <Button variant="outline" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
