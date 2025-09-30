@@ -21,9 +21,9 @@ serve(async (req) => {
     console.log(`Processing OCR for document: ${documentId}`);
 
     // Get Google Cloud credentials
-    const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS') || Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON');
+    const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS2');
     if (!googleCredentials) {
-      throw new Error('Google service account JSON not configured in secrets (GOOGLE_CLOUD_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON)');
+      throw new Error('GOOGLE_CLOUD_CREDENTIALS2 not configured in secrets');
     }
 
     const credentials = JSON.parse(googleCredentials);
