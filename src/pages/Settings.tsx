@@ -6,7 +6,23 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
-import { User, Mail, Shield } from "lucide-react";
+import { User, Mail, Shield, Lock } from "lucide-react";
+import { z } from "zod";
+
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1, "Súčasné heslo je povinné"),
+  newPassword: z
+    .string()
+    .min(8, "Heslo musí mať aspoň 8 znakov")
+    .max(72, "Heslo je príliš dlhé")
+    .regex(/[A-Z]/, "Heslo musí obsahovať aspoň jedno veľké písmeno")
+    .regex(/[a-z]/, "Heslo musí obsahovať aspoň jedno malé písmeno")
+    .regex(/[0-9]/, "Heslo musí obsahovať aspoň jedno číslo"),
+  confirmPassword: z.string().min(1, "Potvrdenie hesla je povinné"),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Heslá sa nezhodujú",
+  path: ["confirmPassword"],
+});
 
 const Settings = () => {
   const { toast } = useToast();
@@ -14,6 +30,15 @@ const Settings = () => {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordErrors, setPasswordErrors] = useState<{
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
 
   useEffect(() => {
     fetchProfile();
@@ -77,6 +102,74 @@ const Settings = () => {
         description: error.message,
         variant: "destructive",
       });
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordErrors({});
+    setPasswordLoading(true);
+
+    try {
+      const validationData = {
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      };
+
+      const result = passwordSchema.safeParse(validationData);
+      
+      if (!result.success) {
+        const fieldErrors: any = {};
+        result.error.errors.forEach((err) => {
+          if (err.path[0]) {
+            fieldErrors[err.path[0]] = err.message;
+          }
+        });
+        setPasswordErrors(fieldErrors);
+        setPasswordLoading(false);
+        return;
+      }
+
+      // First verify current password
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) throw new Error("Používateľ nie je prihlásený");
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        setPasswordErrors({ currentPassword: "Nesprávne súčasné heslo" });
+        setPasswordLoading(false);
+        return;
+      }
+
+      // Update password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) throw updateError;
+
+      toast({
+        title: "Heslo zmenené",
+        description: "Vaše heslo bolo úspešne aktualizované.",
+      });
+
+      // Clear form
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      toast({
+        title: "Chyba pri zmene hesla",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -163,17 +256,77 @@ const Settings = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5" />
-              Účet
+              <Lock className="h-5 w-5" />
+              Zmena hesla
             </CardTitle>
-            <CardDescription>Správa vášho účtu</CardDescription>
+            <CardDescription>Aktualizujte svoje prihlasovacie heslo</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Pre zmenu hesla alebo zmazanie účtu kontaktujte administrátora.
-              </p>
-            </div>
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="currentPassword">Súčasné heslo</Label>
+                <Input
+                  id="currentPassword"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => {
+                    setCurrentPassword(e.target.value);
+                    if (passwordErrors.currentPassword) 
+                      setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+                  }}
+                  placeholder="••••••••"
+                  className={passwordErrors.currentPassword ? "border-destructive" : ""}
+                />
+                {passwordErrors.currentPassword && (
+                  <p className="text-sm text-destructive">{passwordErrors.currentPassword}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">Nové heslo</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    if (passwordErrors.newPassword) 
+                      setPasswordErrors({ ...passwordErrors, newPassword: undefined });
+                  }}
+                  placeholder="••••••••"
+                  className={passwordErrors.newPassword ? "border-destructive" : ""}
+                />
+                {passwordErrors.newPassword && (
+                  <p className="text-sm text-destructive">{passwordErrors.newPassword}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Heslo musí mať aspoň 8 znakov, obsahovať veľké a malé písmená a číslo
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Potvrďte nové heslo</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    if (passwordErrors.confirmPassword) 
+                      setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
+                  }}
+                  placeholder="••••••••"
+                  className={passwordErrors.confirmPassword ? "border-destructive" : ""}
+                />
+                {passwordErrors.confirmPassword && (
+                  <p className="text-sm text-destructive">{passwordErrors.confirmPassword}</p>
+                )}
+              </div>
+
+              <Button type="submit" disabled={passwordLoading}>
+                {passwordLoading ? "Mení sa..." : "Zmeniť heslo"}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>

@@ -9,7 +9,19 @@ import { useToast } from "@/hooks/use-toast";
 import { Shield } from "lucide-react";
 import { z } from "zod";
 
-const authSchema = z.object({
+const loginSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .min(1, "Email je povinný")
+    .email("Neplatná emailová adresa")
+    .max(255, "Email je príliš dlhý"),
+  password: z
+    .string()
+    .min(1, "Heslo je povinné"),
+});
+
+const signupSchema = z.object({
   email: z
     .string()
     .trim()
@@ -37,6 +49,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [errors, setErrors] = useState<{
     email?: string;
     password?: string;
@@ -63,20 +76,54 @@ export default function Auth() {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+    setLoading(true);
+
+    try {
+      const trimmedEmail = email.trim();
+      if (!trimmedEmail || !trimmedEmail.includes("@")) {
+        setErrors({ email: "Zadajte platnú emailovú adresu" });
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: `${window.location.origin}/settings`,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Email odoslaný",
+        description: "Skontrolujte svoju emailovú schránku pre pokyny na reset hesla.",
+      });
+      setShowResetPassword(false);
+      setEmail("");
+    } catch (error: any) {
+      toast({
+        title: "Chyba",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
     setLoading(true);
 
     try {
-      // Validate input
-      const validationData = {
-        email: email.trim(),
-        password,
-        ...((!isLogin && { fullName: fullName.trim() })),
-      };
+      const schema = isLogin ? loginSchema : signupSchema;
+      const validationData = isLogin 
+        ? { email: email.trim(), password }
+        : { email: email.trim(), password, fullName: fullName.trim() };
 
-      const result = authSchema.safeParse(validationData);
+      const result = schema.safeParse(validationData);
       
       if (!result.success) {
         const fieldErrors: any = {};
@@ -103,12 +150,13 @@ export default function Auth() {
           description: "Vitajte späť!",
         });
       } else {
+        const signupData = result.data as z.infer<typeof signupSchema>;
         const { error } = await supabase.auth.signUp({
-          email: result.data.email,
-          password: result.data.password,
+          email: signupData.email,
+          password: signupData.password,
           options: {
             data: {
-              full_name: result.data.fullName || "",
+              full_name: signupData.fullName || "",
             },
             emailRedirectTo: `${window.location.origin}/`,
           },
@@ -147,86 +195,136 @@ export default function Auth() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAuth} className="space-y-4">
-            {!isLogin && (
+          {showResetPassword ? (
+            <form onSubmit={handleResetPassword} className="space-y-4">
               <div>
-                <Label htmlFor="fullName">Celé meno</Label>
+                <Label htmlFor="reset-email">Email</Label>
                 <Input
-                  id="fullName"
-                  type="text"
-                  value={fullName}
+                  id="reset-email"
+                  type="email"
+                  value={email}
                   onChange={(e) => {
-                    setFullName(e.target.value);
-                    if (errors.fullName) setErrors({ ...errors, fullName: undefined });
+                    setEmail(e.target.value);
+                    if (errors.email) setErrors({ ...errors, email: undefined });
                   }}
                   required
-                  placeholder="Jan Novák"
-                  className={errors.fullName ? "border-destructive" : ""}
+                  placeholder="jan.novak@example.com"
+                  className={errors.email ? "border-destructive" : ""}
                 />
-                {errors.fullName && (
-                  <p className="text-sm text-destructive mt-1">{errors.fullName}</p>
+                {errors.email && (
+                  <p className="text-sm text-destructive mt-1">{errors.email}</p>
                 )}
               </div>
-            )}
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (errors.email) setErrors({ ...errors, email: undefined });
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Odosiela sa..." : "Odoslať reset email"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setShowResetPassword(false);
+                  setErrors({});
                 }}
-                required
-                placeholder="jan.novak@example.com"
-                className={errors.email ? "border-destructive" : ""}
-              />
-              {errors.email && (
-                <p className="text-sm text-destructive mt-1">{errors.email}</p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="password">Heslo</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errors.password) setErrors({ ...errors, password: undefined });
-                }}
-                required
-                placeholder="••••••••"
-                className={errors.password ? "border-destructive" : ""}
-              />
-              {errors.password && (
-                <p className="text-sm text-destructive mt-1">{errors.password}</p>
-              )}
+              >
+                Späť na prihlásenie
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleAuth} className="space-y-4">
               {!isLogin && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Heslo musí mať aspoň 8 znakov, obsahovať veľké a malé písmená a číslo
-                </p>
+                <div>
+                  <Label htmlFor="fullName">Celé meno</Label>
+                  <Input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      if (errors.fullName) setErrors({ ...errors, fullName: undefined });
+                    }}
+                    required
+                    placeholder="Jan Novák"
+                    className={errors.fullName ? "border-destructive" : ""}
+                  />
+                  {errors.fullName && (
+                    <p className="text-sm text-destructive mt-1">{errors.fullName}</p>
+                  )}
+                </div>
               )}
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading
-                ? "Spracovávam..."
-                : isLogin
-                ? "Prihlásiť sa"
-                : "Registrovať sa"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => setIsLogin(!isLogin)}
-            >
-              {isLogin
-                ? "Nemáte účet? Registrujte sa"
-                : "Máte účet? Prihláste sa"}
-            </Button>
-          </form>
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (errors.email) setErrors({ ...errors, email: undefined });
+                  }}
+                  required
+                  placeholder="jan.novak@example.com"
+                  className={errors.email ? "border-destructive" : ""}
+                />
+                {errors.email && (
+                  <p className="text-sm text-destructive mt-1">{errors.email}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="password">Heslo</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) setErrors({ ...errors, password: undefined });
+                  }}
+                  required
+                  placeholder="••••••••"
+                  className={errors.password ? "border-destructive" : ""}
+                />
+                {errors.password && (
+                  <p className="text-sm text-destructive mt-1">{errors.password}</p>
+                )}
+                {!isLogin && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Heslo musí mať aspoň 8 znakov, obsahovať veľké a malé písmená a číslo
+                  </p>
+                )}
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading
+                  ? "Spracovávam..."
+                  : isLogin
+                  ? "Prihlásiť sa"
+                  : "Registrovať sa"}
+              </Button>
+              {isLogin && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full"
+                  onClick={() => {
+                    setShowResetPassword(true);
+                    setErrors({});
+                  }}
+                >
+                  Zabudli ste heslo?
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => setIsLogin(!isLogin)}
+              >
+                {isLogin
+                  ? "Nemáte účet? Registrujte sa"
+                  : "Máte účet? Prihláste sa"}
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>
