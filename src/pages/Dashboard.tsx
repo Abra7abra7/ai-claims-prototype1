@@ -10,8 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, FileText, Calendar, Trash2 } from "lucide-react";
+import { Plus, FileText, Calendar, Trash2, Clock, CheckCircle, AlertCircle, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import { sk } from "date-fns/locale";
 
@@ -25,8 +27,35 @@ interface Claim {
   created_at: string;
 }
 
+interface DashboardStats {
+  totalClaims: number;
+  totalDocuments: number;
+  totalReports: number;
+  processingDocuments: number;
+  completedDocuments: number;
+  pendingReviews: number;
+}
+
+interface RecentDocument {
+  id: string;
+  file_name: string;
+  status: string;
+  created_at: string;
+  claim_id: string;
+  claim_number: string;
+}
+
 export default function Dashboard() {
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalClaims: 0,
+    totalDocuments: 0,
+    totalReports: 0,
+    processingDocuments: 0,
+    completedDocuments: 0,
+    pendingReviews: 0,
+  });
+  const [recentDocuments, setRecentDocuments] = useState<RecentDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -39,7 +68,7 @@ export default function Dashboard() {
   const { toast } = useToast();
 
   useEffect(() => {
-    fetchClaims();
+    fetchDashboardData();
     checkAdminRole();
   }, []);
 
@@ -56,15 +85,84 @@ export default function Dashboard() {
     }
   };
 
-  const fetchClaims = async () => {
+  const fetchDashboardData = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Fetch claims
+      const { data: claimsData, error: claimsError } = await supabase
         .from("claims")
         .select("*")
+        .eq("created_by", user.id)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setClaims(data || []);
+      if (claimsError) throw claimsError;
+      setClaims(claimsData || []);
+
+      // Fetch documents for stats
+      const { data: docsData, error: docsError } = await supabase
+        .from("documents")
+        .select("*, claims!inner(created_by)")
+        .eq("claims.created_by", user.id);
+
+      if (docsError) throw docsError;
+
+      // Fetch reports for stats
+      const { data: reportsData, error: reportsError } = await supabase
+        .from("reports")
+        .select("*, claims!inner(created_by)")
+        .eq("claims.created_by", user.id);
+
+      if (reportsError) throw reportsError;
+
+      // Calculate stats
+      const processingDocs = docsData?.filter(
+        (d) => d.status === "uploaded" || d.status === "ocr_processing" || d.status === "anonymizing"
+      ).length || 0;
+
+      const completedDocs = docsData?.filter(
+        (d) => d.status === "approved" || d.status === "report_generated"
+      ).length || 0;
+
+      const pendingReviews = docsData?.filter((d) => d.status === "ready_for_review").length || 0;
+
+      setStats({
+        totalClaims: claimsData?.length || 0,
+        totalDocuments: docsData?.length || 0,
+        totalReports: reportsData?.length || 0,
+        processingDocuments: processingDocs,
+        completedDocuments: completedDocs,
+        pendingReviews,
+      });
+
+      // Fetch recent documents with claim info
+      const { data: recentDocs, error: recentError } = await supabase
+        .from("documents")
+        .select(`
+          id,
+          file_name,
+          status,
+          created_at,
+          claim_id,
+          claims!inner(claim_number, created_by)
+        `)
+        .eq("claims.created_by", user.id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (recentError) throw recentError;
+
+      const formattedRecentDocs = recentDocs?.map((doc: any) => ({
+        id: doc.id,
+        file_name: doc.file_name,
+        status: doc.status,
+        created_at: doc.created_at,
+        claim_id: doc.claim_id,
+        claim_number: doc.claims.claim_number,
+      })) || [];
+
+      setRecentDocuments(formattedRecentDocs);
     } catch (error: any) {
       toast({
         title: "Chyba pri načítaní",
@@ -103,7 +201,7 @@ export default function Dashboard() {
         policy_number: "",
         claim_type: "",
       });
-      fetchClaims();
+      fetchDashboardData();
     } catch (error: any) {
       toast({
         title: "Chyba",
@@ -129,7 +227,7 @@ export default function Dashboard() {
         description: "Poistná udalosť bola úspešne odstránená",
       });
 
-      fetchClaims();
+      fetchDashboardData();
     } catch (error: any) {
       toast({
         title: "Chyba pri mazaní",
@@ -139,6 +237,19 @@ export default function Dashboard() {
     }
   };
 
+  const completionRate =
+    stats.totalDocuments > 0
+      ? Math.round((stats.completedDocuments / stats.totalDocuments) * 100)
+      : 0;
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="text-center py-12">Načítavam...</div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -146,7 +257,7 @@ export default function Dashboard() {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
             <p className="text-muted-foreground mt-1">
-              Správa poistných udalostí
+              Prehľad vašich poistných udalostí a analýz
             </p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -228,31 +339,164 @@ export default function Dashboard() {
           </Dialog>
         </div>
 
-        {loading && !claims.length ? (
-          <div className="text-center py-12 text-muted-foreground">
-            Načítavam...
-          </div>
-        ) : claims.length === 0 ? (
+        {/* Stats Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
-            <CardContent className="pt-6 text-center py-12">
-              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">
-                Zatiaľ nemáte žiadne poistné udalosti
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Celkové claims</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-foreground">{stats.totalClaims}</div>
+              <p className="text-xs text-muted-foreground">Všetky poistné udalosti</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Dokumenty</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-foreground">{stats.totalDocuments}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.completedDocuments} dokončených
               </p>
             </CardContent>
           </Card>
-        ) : (
-          <div className="grid gap-4">
-            {claims.map((claim) => (
-              <Card key={claim.id} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <Link to={`/claim/${claim.id}`} className="flex-1">
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">V spracovaní</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-warning">{stats.processingDocuments}</div>
+              <p className="text-xs text-muted-foreground">Práve sa spracovávajú</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Úspešnosť</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-success">{completionRate}%</div>
+              <p className="text-xs text-muted-foreground">Dokončených dokumentov</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Progress Overview */}
+        {stats.totalDocuments > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Prehľad spracovania</CardTitle>
+              <CardDescription>Stav vašich dokumentov a analýz</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Celkový progress</span>
+                  <span className="font-medium">{completionRate}%</span>
+                </div>
+                <Progress value={completionRate} className="h-2" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 pt-4">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <Clock className="h-4 w-4 text-warning" />
+                    <span className="text-2xl font-bold text-warning">
+                      {stats.processingDocuments}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">V spracovaní</p>
+                </div>
+
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <AlertCircle className="h-4 w-4 text-primary" />
+                    <span className="text-2xl font-bold text-primary">
+                      {stats.pendingReviews}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Čaká na kontrolu</p>
+                </div>
+
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <CheckCircle className="h-4 w-4 text-success" />
+                    <span className="text-2xl font-bold text-success">
+                      {stats.completedDocuments}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Dokončené</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Recent Documents */}
+        {recentDocuments.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Posledné dokumenty</CardTitle>
+              <CardDescription>Najnovšie nahraté a spracované dokumenty</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {recentDocuments.map((doc) => (
+                  <Link
+                    key={doc.id}
+                    to={`/claim/${doc.claim_id}/document/${doc.id}`}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-secondary/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="h-5 w-5 text-primary" />
                       <div>
-                        <CardTitle>{claim.claim_number}</CardTitle>
-                        <CardDescription className="mt-1">
+                        <p className="font-medium text-sm">{doc.file_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {doc.claim_number} • {format(new Date(doc.created_at), "d. MMM yyyy", { locale: sk })}
+                        </p>
+                      </div>
+                    </div>
+                    <StatusBadge status={doc.status} />
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Claims List */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Vaše poistné udalosti</CardTitle>
+            <CardDescription>Všetky claims ktoré ste vytvorili</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {claims.length === 0 ? (
+              <div className="text-center py-8">
+                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">Zatiaľ nemáte žiadne poistné udalosti</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {claims.map((claim) => (
+                  <div key={claim.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-secondary/50 transition-colors">
+                    <Link to={`/claim/${claim.id}`} className="flex items-center gap-3 flex-1">
+                      <div className="flex-1">
+                        <div className="font-medium">{claim.claim_number}</div>
+                        <div className="text-sm text-muted-foreground">
                           {claim.client_name} • {claim.claim_type}
-                        </CardDescription>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          {format(new Date(claim.created_at), "d. MMMM yyyy", { locale: sk })}
+                        </div>
                       </div>
                     </Link>
                     <div className="flex items-center gap-2">
@@ -290,29 +534,11 @@ export default function Dashboard() {
                       )}
                     </div>
                   </div>
-                </CardHeader>
-                <Link to={`/claim/${claim.id}`}>
-                  <CardContent>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <FileText className="h-4 w-4" />
-                        <span>Poistka: {claim.policy_number}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" />
-                        <span>
-                          {format(new Date(claim.created_at), "d. MMMM yyyy", {
-                            locale: sk,
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Link>
-              </Card>
-            ))}
-          </div>
-        )}
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </Layout>
   );
