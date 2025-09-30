@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, FileText, Calendar, Trash2, Clock, CheckCircle, AlertCircle, TrendingUp } from "lucide-react";
+import { Plus, FileText, Calendar, Trash2, Clock, CheckCircle, AlertCircle, TrendingUp, LayoutGrid, List, Search } from "lucide-react";
 import { format } from "date-fns";
 import { sk } from "date-fns/locale";
 
@@ -63,6 +64,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [viewMode, setViewMode] = useState<"cards" | "table">("table");
+  const [searchQuery, setSearchQuery] = useState("");
   const [newClaim, setNewClaim] = useState({
     claim_number: "",
     client_name: "",
@@ -70,6 +73,16 @@ export default function Dashboard() {
     claim_type: "",
   });
   const { toast } = useToast();
+
+  const filteredClaims = claimsWithDetails.filter((claim) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      claim.claim_number.toLowerCase().includes(query) ||
+      claim.client_name.toLowerCase().includes(query) ||
+      claim.policy_number.toLowerCase().includes(query) ||
+      claim.claim_type.toLowerCase().includes(query)
+    );
+  });
 
   useEffect(() => {
     fetchDashboardData();
@@ -328,7 +341,7 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
             <p className="text-muted-foreground mt-1">
@@ -414,6 +427,39 @@ export default function Dashboard() {
           </Dialog>
         </div>
 
+        {/* Search and View Toggle */}
+        {claimsWithDetails.length > 0 && (
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Hľadať podľa čísla, mena, poistky alebo typu..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant={viewMode === "cards" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("cards")}
+              >
+                <LayoutGrid className="h-4 w-4 mr-2" />
+                Karty
+              </Button>
+              <Button
+                variant={viewMode === "table" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("table")}
+              >
+                <List className="h-4 w-4 mr-2" />
+                Tabuľka
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Claims with Workflow Status */}
         {claimsWithDetails.length === 0 ? (
           <Card>
@@ -425,9 +471,19 @@ export default function Dashboard() {
               </p>
             </CardContent>
           </Card>
-        ) : (
+        ) : filteredClaims.length === 0 ? (
+          <Card>
+            <CardContent className="text-center py-12">
+              <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Žiadne výsledky</h3>
+              <p className="text-muted-foreground mb-4">
+                Skúste zmeniť vyhľadávacie kritériá
+              </p>
+            </CardContent>
+          </Card>
+        ) : viewMode === "cards" ? (
           <div className="grid gap-6 md:grid-cols-2">
-            {claimsWithDetails.map((claim) => (
+            {filteredClaims.map((claim) => (
               <Card key={claim.id} className="overflow-hidden">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -567,6 +623,103 @@ export default function Dashboard() {
               </Card>
             ))}
           </div>
+        ) : (
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Číslo PU</TableHead>
+                  <TableHead>Klient</TableHead>
+                  <TableHead>Číslo poistky</TableHead>
+                  <TableHead>Typ</TableHead>
+                  <TableHead>Stav</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead>Dokumenty</TableHead>
+                  <TableHead>Vytvorené</TableHead>
+                  <TableHead className="text-right">Akcie</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredClaims.map((claim) => (
+                  <TableRow key={claim.id}>
+                    <TableCell className="font-medium">{claim.claim_number}</TableCell>
+                    <TableCell>{claim.client_name}</TableCell>
+                    <TableCell>{claim.policy_number}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {claim.claim_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(claim.workflowStatus)}
+                        <span className="text-sm">{claim.workflowLabel}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2 min-w-[120px]">
+                        <Progress value={claim.progressPercent} className="h-2 flex-1" />
+                        <span className="text-xs font-medium min-w-[35px]">
+                          {Math.round(claim.progressPercent)}%
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <span className="font-medium">{claim.approvedDocs + claim.reportGeneratedDocs}</span>
+                        <span className="text-muted-foreground">/{claim.totalDocuments}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {format(new Date(claim.created_at), "d.M.yyyy", { locale: sk })}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Link to={`/claim/${claim.id}`}>
+                          <Button variant="ghost" size="sm">
+                            Detail
+                          </Button>
+                        </Link>
+                        {claim.workflowStatus === "analysis_complete" && claim.totalReports > 0 && (
+                          <Link to={`/claim/${claim.id}/final-report`}>
+                            <Button variant="ghost" size="sm">
+                              Analýza
+                            </Button>
+                          </Link>
+                        )}
+                        {isAdmin && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Zmazať poistnú udalosť</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Naozaj chcete zmazať túto poistnú udalosť? Táto akcia je nenávratná.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Zrušiť</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteClaim(claim.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Zmazať
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
         )}
       </div>
     </Layout>
