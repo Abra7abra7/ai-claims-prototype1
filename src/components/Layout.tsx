@@ -1,7 +1,7 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
-import { FileText, Home, LogOut, Settings, Shield } from "lucide-react";
+import { FileText, Home, LogOut, Settings, Shield, LayoutDashboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,6 +12,23 @@ interface LayoutProps {
 export const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const { toast } = useToast();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const checkAdminRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .eq("role", "admin")
+          .maybeSingle();
+        setIsAdmin(!!data);
+      }
+    };
+    checkAdminRole();
+  }, []);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -27,6 +44,11 @@ export const Layout = ({ children }: LayoutProps) => {
   const navItems = [
     { path: "/", icon: Home, label: "Dashboard" },
     { path: "/settings", icon: Settings, label: "Nastavenia" },
+  ];
+
+  const adminNavItems = [
+    { path: "/admin", icon: LayoutDashboard, label: "Admin Dashboard" },
+    { path: "/admin/analysis-types", icon: FileText, label: "Typy analýz" },
   ];
 
   return (
@@ -53,6 +75,21 @@ export const Layout = ({ children }: LayoutProps) => {
                     </Button>
                   </Link>
                 ))}
+                {isAdmin && (
+                  <>
+                    {adminNavItems.map((item) => (
+                      <Link key={item.path} to={item.path}>
+                        <Button
+                          variant={location.pathname === item.path ? "default" : "ghost"}
+                          size="sm"
+                        >
+                          <item.icon className="h-4 w-4 mr-2" />
+                          {item.label}
+                        </Button>
+                      </Link>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout}>

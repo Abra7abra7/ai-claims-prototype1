@@ -13,6 +13,7 @@ import ReportView from "./pages/ReportView";
 import BatchProcess from "./pages/BatchProcess";
 import FinalReport from "./pages/FinalReport";
 import AdminAnalysisTypes from "./pages/AdminAnalysisTypes";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -104,6 +105,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <FinalReport />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminDashboard />
               </ProtectedRoute>
             }
           />
