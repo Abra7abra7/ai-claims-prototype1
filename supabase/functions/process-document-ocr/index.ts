@@ -54,9 +54,18 @@ serve(async (req) => {
       throw new Error(`Failed to download file from storage: ${downloadError?.message}`);
     }
 
-    // Convert blob to base64
+    // Convert blob to base64 (handling large files)
     const arrayBuffer = await fileData.arrayBuffer();
-    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Process in chunks to avoid stack overflow
+    let binaryString = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const base64Content = btoa(binaryString);
 
     // Get access token for Google API
     const now = Math.floor(Date.now() / 1000);
@@ -183,8 +192,25 @@ async function createJWT(header: any, claim: any, privateKey: string): Promise<s
 }
 
 function base64UrlEncode(data: string | ArrayBuffer): string {
-  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
-  return btoa(String.fromCharCode(...bytes))
+  let binaryString = '';
+  
+  if (typeof data === 'string') {
+    const bytes = new TextEncoder().encode(data);
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+  } else {
+    const bytes = new Uint8Array(data);
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+  }
+  
+  return btoa(binaryString)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');

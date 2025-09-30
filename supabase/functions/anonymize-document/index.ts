@@ -190,8 +190,25 @@ async function createJWT(header: any, claim: any, privateKey: string): Promise<s
 }
 
 function base64UrlEncode(data: string | ArrayBuffer): string {
-  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
-  return btoa(String.fromCharCode(...bytes))
+  let binaryString = '';
+  
+  if (typeof data === 'string') {
+    const bytes = new TextEncoder().encode(data);
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+  } else {
+    const bytes = new Uint8Array(data);
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+  }
+  
+  return btoa(binaryString)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
