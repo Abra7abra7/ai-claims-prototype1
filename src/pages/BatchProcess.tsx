@@ -47,75 +47,36 @@ export default function BatchProcess() {
     }
   };
 
-  const simulateOCR = async (docId: string, fileName: string) => {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    const simulatedText = `LEKÁRSKA SPRÁVA - ${fileName}
-    
-Pacient: Ján Novák
-Rodné číslo: 850101/1234
-Adresa: Hlavná 123, 811 01 Bratislava
-Telefón: +421 912 345 678
+  const processOCR = async (docId: string, fileName: string) => {
+    const { data, error } = await supabase.functions.invoke("process-document-ocr", {
+      body: { documentId: docId },
+    });
 
-Dátum vyšetrenia: ${new Date().toLocaleDateString('sk-SK')}
+    if (error) {
+      throw new Error(`OCR failed: ${error.message}`);
+    }
 
-Diagnóza: Zlomenina predlaktia vpravo (S52.5)
+    if (data.error) {
+      throw new Error(data.error);
+    }
 
-Anamnéza:
-Pacient prišiel na vyšetrenie po páde z bicykla. Udáva bolesť v oblasti pravého predlaktia a obmedzenú pohyblivosť.
-
-Objektívne vyšetrenie:
-Zjavná deformita v oblasti pravého predlaktia, otok, hematóm. Distálna cirkulácia a senzitivita zachovaná.
-
-RTG vyšetrenie:
-Potvrdená zlomenina distálneho rádia s dislokáciou.
-
-Liečba:
-Vykonaná repozícia a imobilizácia sádrovou dlahou. Odporúčaná kontrola u ortopéda po 7 dňoch.
-
-Práceneschopnosť: 6 týždňov
-
-MUDr. Peter Horák
-Traumatológia`;
-
-    await supabase
-      .from("documents")
-      .update({ status: "ocr_complete" })
-      .eq("id", docId);
-
-    await supabase
-      .from("processed_documents")
-      .upsert({
-        document_id: docId,
-        ocr_text: simulatedText,
-      });
-
-    return simulatedText;
+    return data.text;
   };
 
-  const simulateAnonymization = async (docId: string, ocrText: string) => {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    
-    const anonymizedText = ocrText
-      .replace(/Ján Novák/g, "[MENO]")
-      .replace(/850101\/1234/g, "[RODNÉ_ČÍSLO]")
-      .replace(/Hlavná 123, 811 01 Bratislava/g, "[ADRESA]")
-      .replace(/\+421 912 345 678/g, "[TELEFÓN]")
-      .replace(/MUDr\. Peter Horák/g, "[LEKÁR]");
+  const processAnonymization = async (docId: string) => {
+    const { data, error } = await supabase.functions.invoke("anonymize-document", {
+      body: { documentId: docId },
+    });
 
-    await supabase
-      .from("documents")
-      .update({ status: "ready_for_review" })
-      .eq("id", docId);
+    if (error) {
+      throw new Error(`Anonymization failed: ${error.message}`);
+    }
 
-    await supabase
-      .from("processed_documents")
-      .update({
-        anonymized_text: anonymizedText,
-      })
-      .eq("document_id", docId);
+    if (data.error) {
+      throw new Error(data.error);
+    }
 
-    return anonymizedText;
+    return data.text;
   };
 
   const generateReport = async (docId: string) => {
@@ -180,17 +141,17 @@ Traumatológia`;
       try {
         toast({
           title: `Spracováva sa ${doc.file_name}`,
-          description: "OCR extrakcia...",
+          description: "Google Document AI OCR extrakcia...",
         });
 
-        const ocrText = await simulateOCR(doc.id, doc.file_name);
+        const ocrText = await processOCR(doc.id, doc.file_name);
 
         toast({
           title: `Spracováva sa ${doc.file_name}`,
-          description: "Anonymizácia...",
+          description: "Google Cloud DLP anonymizácia...",
         });
 
-        await simulateAnonymization(doc.id, ocrText);
+        await processAnonymization(doc.id);
 
         toast({
           title: "Dokončené",

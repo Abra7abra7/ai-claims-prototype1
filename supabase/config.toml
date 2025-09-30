@@ -5,3 +5,9 @@ verify_jwt = true
 
 [functions.generate-final-report]
 verify_jwt = true
+
+[functions.process-document-ocr]
+verify_jwt = true
+
+[functions.anonymize-document]
+verify_jwt = true
