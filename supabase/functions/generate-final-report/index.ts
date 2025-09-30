@@ -12,7 +12,31 @@ serve(async (req) => {
   }
 
   try {
-    const { documentsText, claimInfo, insuranceContexts, customPrompt } = await req.json();
+    const { documentsText, claimInfo, insuranceContexts, customPrompt, analysisTypeId } = await req.json();
+
+    // Import Supabase client
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Get analysis type system prompt
+    let baseSystemPrompt = `Si expert na likvidáciu poistných udalostí v oblasti životného a úrazového poistenia. 
+Tvojou úlohou je analyzovať VŠETKY priložené lekárske správy a vytvoriť JEDEN komplexný report pre interného likvidátora.`;
+
+    if (analysisTypeId) {
+      const { data: analysisType, error: analysisTypeError } = await supabase
+        .from("analysis_types")
+        .select("system_prompt")
+        .eq("id", analysisTypeId)
+        .maybeSingle();
+
+      if (analysisTypeError) {
+        console.error("Error fetching analysis type:", analysisTypeError);
+      } else if (analysisType) {
+        baseSystemPrompt = analysisType.system_prompt;
+      }
+    }
 
     // Build context from insurance documents
     let contextText = "";
@@ -25,15 +49,7 @@ serve(async (req) => {
     }
 
     // Build system prompt
-    const systemPrompt = `Si expert na likvidáciu poistných udalostí v oblasti životného a úrazového poistenia. 
-Tvojou úlohou je analyzovať VŠETKY priložené lekárske správy a vytvoriť JEDEN komplexný report pre interného likvidátora. 
-
-Zameraj sa na:
-1. Komplexný súhrn VŠETKÝCH lekárskych správ
-2. Súlad medzi lekárskymi správami a poistnými podmienkami
-3. Kľúčové diagnózy, liečebné postupy a ich vzájomné súvislosti
-4. Identifikáciu prípadných výluk z poistenia
-5. Jasné a vecne podložené odporúčanie založené na VŠETKÝCH dokumentoch
+    const systemPrompt = `${baseSystemPrompt}
 
 ${customPrompt ? `\nDOPLŇUJÚCE INŠTRUKCIE: ${customPrompt}` : ''}
 

@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      analysis_types: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string
+          id: string
+          is_active: boolean
+          name: string
+          system_prompt: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description: string
+          id?: string
+          is_active?: boolean
+          name: string
+          system_prompt: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          system_prompt?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       claims: {
         Row: {
           claim_number: string
@@ -197,6 +230,8 @@ export type Database = {
       }
       reports: {
         Row: {
+          analysis_type_id: string | null
+          analysis_type_name: string | null
           claim_id: string
           created_at: string | null
           document_id: string
@@ -209,6 +244,8 @@ export type Database = {
           summary: string
         }
         Insert: {
+          analysis_type_id?: string | null
+          analysis_type_name?: string | null
           claim_id: string
           created_at?: string | null
           document_id: string
@@ -221,6 +258,8 @@ export type Database = {
           summary: string
         }
         Update: {
+          analysis_type_id?: string | null
+          analysis_type_name?: string | null
           claim_id?: string
           created_at?: string | null
           document_id?: string
@@ -233,6 +272,13 @@ export type Database = {
           summary?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "reports_analysis_type_id_fkey"
+            columns: ["analysis_type_id"]
+            isOneToOne: false
+            referencedRelation: "analysis_types"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "reports_claim_id_fkey"
             columns: ["claim_id"]

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Download, Loader2, Sparkles } from "lucide-react";
 
@@ -26,6 +27,13 @@ interface InsuranceContext {
   context_type: string;
 }
 
+interface AnalysisType {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+}
+
 interface Report {
   id?: string;
   summary: string;
@@ -42,6 +50,8 @@ export default function FinalReport() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [contexts, setContexts] = useState<InsuranceContext[]>([]);
   const [selectedContexts, setSelectedContexts] = useState<string[]>([]);
+  const [analysisTypes, setAnalysisTypes] = useState<AnalysisType[]>([]);
+  const [selectedAnalysisType, setSelectedAnalysisType] = useState<string>("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +81,7 @@ export default function FinalReport() {
         return;
       }
 
-      const [docsResult, contextsResult] = await Promise.all([
+      const [docsResult, contextsResult, analysisTypesResult] = await Promise.all([
         supabase
           .from("documents")
           .select("*")
@@ -81,16 +91,28 @@ export default function FinalReport() {
           .from("insurance_context")
           .select("*")
           .eq("is_active", true),
+        supabase
+          .from("analysis_types")
+          .select("*")
+          .eq("is_active", true)
+          .order("name"),
       ]);
 
       if (docsResult.error) throw docsResult.error;
       if (contextsResult.error) throw contextsResult.error;
+      if (analysisTypesResult.error) throw analysisTypesResult.error;
 
       setDocuments(docsResult.data || []);
       setContexts(contextsResult.data || []);
+      setAnalysisTypes(analysisTypesResult.data || []);
       
       // Select all contexts by default
       setSelectedContexts((contextsResult.data || []).map(c => c.id));
+      
+      // Select first analysis type by default
+      if (analysisTypesResult.data && analysisTypesResult.data.length > 0) {
+        setSelectedAnalysisType(analysisTypesResult.data[0].id);
+      }
     } catch (error: any) {
       toast({
         title: "Chyba pri načítaní",
@@ -107,6 +129,15 @@ export default function FinalReport() {
       toast({
         title: "Žiadne dokumenty",
         description: "Najprv schváľte dokumenty",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!selectedAnalysisType) {
+      toast({
+        title: "Vyberte typ analýzy",
+        description: "Musíte vybrať typ analýzy pred generovaním reportu",
         variant: "destructive",
       });
       return;
@@ -151,6 +182,9 @@ export default function FinalReport() {
         selectedContexts.includes(c.id)
       );
 
+      // Get selected analysis type
+      const analysisType = analysisTypes.find(t => t.id === selectedAnalysisType);
+
       // Call AI to generate comprehensive report
       const { data: aiResponse, error: aiError } = await supabase.functions.invoke("generate-final-report", {
         body: {
@@ -158,6 +192,7 @@ export default function FinalReport() {
           claimInfo: claim,
           insuranceContexts: selectedContextsData,
           customPrompt: customPrompt || null,
+          analysisTypeId: selectedAnalysisType,
         },
       });
 
@@ -180,6 +215,8 @@ export default function FinalReport() {
         recommendation: aiResponse.recommendation,
         justification: aiResponse.justification,
         generated_by: user.id,
+        analysis_type_id: selectedAnalysisType,
+        analysis_type_name: analysisType?.name || "Neznámy typ",
       });
 
       // Update all documents status
@@ -283,6 +320,27 @@ ${report.justification}
                     </li>
                   ))}
                 </ul>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Typ analýzy</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RadioGroup value={selectedAnalysisType} onValueChange={setSelectedAnalysisType}>
+                  {analysisTypes.map(type => (
+                    <div key={type.id} className="flex items-start gap-3 py-3 border-b last:border-0">
+                      <RadioGroupItem value={type.id} id={type.id} className="mt-1" />
+                      <Label htmlFor={type.id} className="flex-1 cursor-pointer">
+                        <p className="font-medium">{type.name}</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {type.description}
+                        </p>
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
               </CardContent>
             </Card>
 
