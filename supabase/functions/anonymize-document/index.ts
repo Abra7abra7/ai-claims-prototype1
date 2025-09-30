@@ -105,8 +105,7 @@ serve(async (req) => {
             { name: "IBAN_CODE" },
             { name: "STREET_ADDRESS" },
             { name: "DATE_OF_BIRTH" },
-            { name: "PASSPORT" },
-            { name: "NATIONAL_ID" }
+            { name: "PASSPORT" }
           ],
           minLikelihood: "POSSIBLE"
         }
