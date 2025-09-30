@@ -14,6 +14,7 @@ import BatchProcess from "./pages/BatchProcess";
 import FinalReport from "./pages/FinalReport";
 import AdminAnalysisTypes from "./pages/AdminAnalysisTypes";
 import AdminDashboard from "./pages/AdminDashboard";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -105,6 +106,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <FinalReport />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
               </ProtectedRoute>
             }
           />
