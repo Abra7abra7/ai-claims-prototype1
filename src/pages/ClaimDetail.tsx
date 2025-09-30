@@ -31,11 +31,17 @@ interface Document {
   created_at: string;
 }
 
+interface FinalReport {
+  id: string;
+  created_at: string;
+}
+
 export default function ClaimDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [claim, setClaim] = useState<Claim | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [finalReport, setFinalReport] = useState<FinalReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -47,9 +53,10 @@ export default function ClaimDetail() {
 
   const fetchClaimDetail = async () => {
     try {
-      const [claimResult, docsResult] = await Promise.all([
+      const [claimResult, docsResult, reportResult] = await Promise.all([
         supabase.from("claims").select("*").eq("id", id).maybeSingle(),
         supabase.from("documents").select("*").eq("claim_id", id).order("created_at", { ascending: false }),
+        supabase.from("reports").select("id, created_at").eq("claim_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
 
       if (claimResult.error) throw claimResult.error;
@@ -57,6 +64,7 @@ export default function ClaimDetail() {
 
       setClaim(claimResult.data);
       setDocuments(docsResult.data || []);
+      setFinalReport(reportResult.data);
     } catch (error: any) {
       toast({
         title: "Chyba pri načítaní",
@@ -274,7 +282,11 @@ export default function ClaimDetail() {
                     <Button size="sm" variant="secondary" onClick={handleBatchProcess}>
                       Spracovať všetky
                     </Button>
-                    {documents.every(doc => doc.status === "approved") && (
+                    {finalReport ? (
+                      <Button size="sm" onClick={() => navigate(`/claim/${id}/final-report`)}>
+                        Zobraziť finálny report
+                      </Button>
+                    ) : documents.every(doc => doc.status === "approved") && (
                       <Button size="sm" onClick={() => navigate(`/claim/${id}/final-report`)}>
                         Vygenerovať finálny report
                       </Button>

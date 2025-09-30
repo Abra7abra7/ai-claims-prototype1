@@ -27,11 +27,13 @@ interface InsuranceContext {
 }
 
 interface Report {
+  id?: string;
   summary: string;
   relevance_analysis: string;
   exclusions_analysis: string;
   recommendation: string;
   justification: string;
+  created_at?: string;
 }
 
 export default function FinalReport() {
@@ -52,6 +54,23 @@ export default function FinalReport() {
 
   const fetchData = async () => {
     try {
+      // First check if a report already exists
+      const { data: existingReport, error: reportError } = await supabase
+        .from("reports")
+        .select("*")
+        .eq("claim_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (reportError && reportError.code !== "PGRST116") throw reportError;
+
+      if (existingReport) {
+        setReport(existingReport);
+        setLoading(false);
+        return;
+      }
+
       const [docsResult, contextsResult] = await Promise.all([
         supabase
           .from("documents")
