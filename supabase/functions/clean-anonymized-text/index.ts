@@ -91,11 +91,11 @@ Vráť CELÝ opravený text.`
 
     console.info("AI text cleaning completed");
 
-    // Update the anonymized text with cleaned version
+    // Save the cleaned text separately
     const { error: updateError } = await supabase
       .from("processed_documents")
       .update({
-        anonymized_text: cleanedText,
+        cleaned_text: cleanedText,
       })
       .eq("document_id", documentId);
 

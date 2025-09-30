@@ -19,6 +19,7 @@ interface Document {
 interface ProcessedDocument {
   ocr_text: string | null;
   anonymized_text: string | null;
+  cleaned_text: string | null;
   reviewed_text: string | null;
 }
 
@@ -48,8 +49,13 @@ export default function DocumentProcessor() {
       setDocument(docResult.data);
       setProcessedDoc(processedResult.data);
       
-      if (processedResult.data?.anonymized_text) {
-        setEditedText(processedResult.data.reviewed_text || processedResult.data.anonymized_text);
+      if (processedResult.data) {
+        setEditedText(
+          processedResult.data.reviewed_text || 
+          processedResult.data.cleaned_text || 
+          processedResult.data.anonymized_text || 
+          ""
+        );
       }
     } catch (error: any) {
       toast({
@@ -151,7 +157,7 @@ export default function DocumentProcessor() {
 
       await supabase
         .from("processed_documents")
-        .update({ anonymized_text: data.cleanedText })
+        .update({ cleaned_text: data.cleanedText })
         .eq("document_id", docId);
 
       setEditedText(data.cleanedText);
@@ -270,7 +276,7 @@ export default function DocumentProcessor() {
             )}
 
               <div className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid md:grid-cols-3 gap-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">
                       OCR text (pôvodný)
@@ -284,7 +290,18 @@ export default function DocumentProcessor() {
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">
-                      Anonymizovaný text (na kontrolu a úpravu)
+                      Anonymizovaný text
+                    </label>
+                    <Textarea
+                      value={processedDoc?.anonymized_text || ""}
+                      readOnly
+                      rows={20}
+                      className="font-mono text-sm bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      Vyčistený text (upraviteľný)
                     </label>
                     <Textarea
                       value={editedText}
@@ -292,6 +309,7 @@ export default function DocumentProcessor() {
                       rows={20}
                       className="font-mono text-sm"
                       disabled={document.status === "approved"}
+                      placeholder="Text sa zobrazí po vyčistení..."
                     />
                   </div>
                 </div>

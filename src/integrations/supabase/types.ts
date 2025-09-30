@@ -163,6 +163,7 @@ export type Database = {
       processed_documents: {
         Row: {
           anonymized_text: string | null
+          cleaned_text: string | null
           created_at: string | null
           document_id: string
           id: string
@@ -174,6 +175,7 @@ export type Database = {
         }
         Insert: {
           anonymized_text?: string | null
+          cleaned_text?: string | null
           created_at?: string | null
           document_id: string
           id?: string
@@ -185,6 +187,7 @@ export type Database = {
         }
         Update: {
           anonymized_text?: string | null
+          cleaned_text?: string | null
           created_at?: string | null
           document_id?: string
           id?: string
