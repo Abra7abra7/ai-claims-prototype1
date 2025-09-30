@@ -7,6 +7,29 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Shield } from "lucide-react";
+import { z } from "zod";
+
+const authSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .min(1, "Email je povinný")
+    .email("Neplatná emailová adresa")
+    .max(255, "Email je príliš dlhý"),
+  password: z
+    .string()
+    .min(8, "Heslo musí mať aspoň 8 znakov")
+    .max(72, "Heslo je príliš dlhé")
+    .regex(/[A-Z]/, "Heslo musí obsahovať aspoň jedno veľké písmeno")
+    .regex(/[a-z]/, "Heslo musí obsahovať aspoň jedno malé písmeno")
+    .regex(/[0-9]/, "Heslo musí obsahovať aspoň jedno číslo"),
+  fullName: z
+    .string()
+    .trim()
+    .min(2, "Meno musí mať aspoň 2 znaky")
+    .max(100, "Meno je príliš dlhé")
+    .optional(),
+});
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -14,6 +37,11 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{
+    email?: string;
+    password?: string;
+    fullName?: string;
+  }>({});
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -37,13 +65,35 @@ export default function Auth() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
     setLoading(true);
 
     try {
+      // Validate input
+      const validationData = {
+        email: email.trim(),
+        password,
+        ...((!isLogin && { fullName: fullName.trim() })),
+      };
+
+      const result = authSchema.safeParse(validationData);
+      
+      if (!result.success) {
+        const fieldErrors: any = {};
+        result.error.errors.forEach((err) => {
+          if (err.path[0]) {
+            fieldErrors[err.path[0]] = err.message;
+          }
+        });
+        setErrors(fieldErrors);
+        setLoading(false);
+        return;
+      }
+
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: result.data.email,
+          password: result.data.password,
         });
 
         if (error) throw error;
@@ -54,11 +104,11 @@ export default function Auth() {
         });
       } else {
         const { error } = await supabase.auth.signUp({
-          email,
-          password,
+          email: result.data.email,
+          password: result.data.password,
           options: {
             data: {
-              full_name: fullName,
+              full_name: result.data.fullName || "",
             },
             emailRedirectTo: `${window.location.origin}/`,
           },
@@ -105,10 +155,17 @@ export default function Auth() {
                   id="fullName"
                   type="text"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (errors.fullName) setErrors({ ...errors, fullName: undefined });
+                  }}
                   required
                   placeholder="Jan Novák"
+                  className={errors.fullName ? "border-destructive" : ""}
                 />
+                {errors.fullName && (
+                  <p className="text-sm text-destructive mt-1">{errors.fullName}</p>
+                )}
               </div>
             )}
             <div>
@@ -117,10 +174,17 @@ export default function Auth() {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (errors.email) setErrors({ ...errors, email: undefined });
+                }}
                 required
                 placeholder="jan.novak@example.com"
+                className={errors.email ? "border-destructive" : ""}
               />
+              {errors.email && (
+                <p className="text-sm text-destructive mt-1">{errors.email}</p>
+              )}
             </div>
             <div>
               <Label htmlFor="password">Heslo</Label>
@@ -128,10 +192,22 @@ export default function Auth() {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (errors.password) setErrors({ ...errors, password: undefined });
+                }}
                 required
                 placeholder="••••••••"
+                className={errors.password ? "border-destructive" : ""}
               />
+              {errors.password && (
+                <p className="text-sm text-destructive mt-1">{errors.password}</p>
+              )}
+              {!isLogin && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Heslo musí mať aspoň 8 znakov, obsahovať veľké a malé písmená a číslo
+                </p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading
