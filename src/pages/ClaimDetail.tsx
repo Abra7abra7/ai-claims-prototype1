@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ interface Document {
 
 export default function ClaimDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [claim, setClaim] = useState<Claim | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
@@ -269,9 +270,16 @@ export default function ClaimDetail() {
                   </DialogContent>
                 </Dialog>
                 {documents.length > 0 && (
-                  <Button size="sm" variant="secondary" onClick={handleBatchProcess}>
-                    Spracovať všetky
-                  </Button>
+                  <>
+                    <Button size="sm" variant="secondary" onClick={handleBatchProcess}>
+                      Spracovať všetky
+                    </Button>
+                    {documents.every(doc => doc.status === "approved") && (
+                      <Button size="sm" onClick={() => navigate(`/claim/${id}/final-report`)}>
+                        Vygenerovať finálny report
+                      </Button>
+                    )}
+                  </>
                 )}
                 </div>
               </div>

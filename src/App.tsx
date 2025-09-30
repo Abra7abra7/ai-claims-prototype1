@@ -11,6 +11,7 @@ import ClaimDetail from "./pages/ClaimDetail";
 import DocumentProcessor from "./pages/DocumentProcessor";
 import ReportView from "./pages/ReportView";
 import BatchProcess from "./pages/BatchProcess";
+import FinalReport from "./pages/FinalReport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -94,6 +95,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <BatchProcess />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/claim/:id/final-report"
+            element={
+              <ProtectedRoute>
+                <FinalReport />
               </ProtectedRoute>
             }
           />

@@ -278,36 +278,48 @@ Traumatológia`;
               </Button>
             )}
 
-            {(document.status === "ready_for_review" || document.status === "approved") && (
               <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Anonymizovaný text (kontrola a úprava)
-                  </label>
-                  <Textarea
-                    value={editedText}
-                    onChange={(e) => setEditedText(e.target.value)}
-                    rows={20}
-                    className="font-mono text-sm"
-                    disabled={document.status === "approved"}
-                  />
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      OCR text (pôvodný)
+                    </label>
+                    <Textarea
+                      value={processedDoc?.ocr_text || ""}
+                      readOnly
+                      rows={20}
+                      className="font-mono text-sm bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      Anonymizovaný text (na kontrolu a úpravu)
+                    </label>
+                    <Textarea
+                      value={editedText}
+                      onChange={(e) => setEditedText(e.target.value)}
+                      rows={20}
+                      className="font-mono text-sm"
+                      disabled={document.status === "approved"}
+                    />
+                  </div>
                 </div>
 
                 {document.status === "ready_for_review" && (
                   <Button onClick={handleApprove} disabled={processing} className="w-full">
                     <Check className="h-4 w-4 mr-2" />
-                    {processing ? "Schvaľujem..." : "Schváliť text"}
+                    {processing ? "Schvaľujem..." : "Schváliť dokument"}
                   </Button>
                 )}
 
                 {document.status === "approved" && (
-                  <Button onClick={handleGenerateReport} className="w-full">
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Generovať AI report
-                  </Button>
+                  <div className="p-4 bg-success/10 border border-success rounded-lg">
+                    <p className="text-success font-medium">
+                      ✓ Dokument bol schválený a je pripravený na finálnu analýzu
+                    </p>
+                  </div>
                 )}
               </div>
-            )}
           </CardContent>
         </Card>
       </div>

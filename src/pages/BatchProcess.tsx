@@ -105,14 +105,13 @@ Traumatológia`;
 
     await supabase
       .from("documents")
-      .update({ status: "approved" })
+      .update({ status: "ready_for_review" })
       .eq("id", docId);
 
     await supabase
       .from("processed_documents")
       .update({
         anonymized_text: anonymizedText,
-        reviewed_text: anonymizedText,
       })
       .eq("document_id", docId);
 
@@ -194,15 +193,8 @@ Traumatológia`;
         await simulateAnonymization(doc.id, ocrText);
 
         toast({
-          title: `Spracováva sa ${doc.file_name}`,
-          description: "Generovanie AI reportu...",
-        });
-
-        await generateReport(doc.id);
-
-        toast({
           title: "Dokončené",
-          description: `${doc.file_name} bol úspešne spracovaný`,
+          description: `${doc.file_name} je pripravený na kontrolu`,
         });
 
       } catch (error: any) {
@@ -220,7 +212,7 @@ Traumatológia`;
 
     toast({
       title: "Hromadné spracovanie dokončené",
-      description: `Spracovaných ${unprocessedDocs.length} dokumentov`,
+      description: `Spracovaných ${unprocessedDocs.length} dokumentov. Teraz ich môžete skontrolovať a schváliť.`,
     });
 
     await fetchDocuments();
@@ -235,7 +227,11 @@ Traumatológia`;
     }
   }, [documents.length]);
 
-  const allProcessed = documents.every(doc => doc.status === "report_generated");
+  const allProcessed = documents.every(doc => 
+    doc.status === "ready_for_review" || 
+    doc.status === "approved" || 
+    doc.status === "report_generated"
+  );
 
   return (
     <Layout>
@@ -292,14 +288,7 @@ Traumatológia`;
             {allProcessed && (
               <div className="flex gap-2 pt-4">
                 <Button onClick={() => navigate(`/claim/${id}`)} className="flex-1">
-                  Späť na poistnú udalosť
-                </Button>
-                <Button
-                  onClick={() => navigate(`/claim/${id}/reports`)}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Zobraziť reporty
+                  Skontrolovať dokumenty
                 </Button>
               </div>
             )}

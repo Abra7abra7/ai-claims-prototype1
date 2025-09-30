@@ -2,3 +2,6 @@ project_id = "mmigoucitdlfsmbbrtfs"
 
 [functions.generate-report]
 verify_jwt = true
+
+[functions.generate-final-report]
+verify_jwt = true
