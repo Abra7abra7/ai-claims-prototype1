@@ -15,28 +15,47 @@ serve(async (req) => {
     const { documentId } = await req.json();
 
     if (!documentId) {
+      console.error("Missing document ID in request");
       throw new Error("Document ID is required");
     }
 
-    console.info(`Cleaning text for document: ${documentId}`);
+    console.info(`=== Starting text cleaning for document: ${documentId} ===`);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
 
+    if (!lovableApiKey) {
+      console.error("LOVABLE_API_KEY is not configured");
+      throw new Error("AI service is not configured");
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Fetch the anonymized text
+    console.info("Fetching anonymized text from database...");
     const { data: processedDoc, error: fetchError } = await supabase
       .from("processed_documents")
       .select("anonymized_text")
       .eq("document_id", documentId)
       .maybeSingle();
 
-    if (fetchError || !processedDoc?.anonymized_text) {
-      throw new Error("Failed to fetch anonymized text");
+    if (fetchError) {
+      console.error("Database fetch error:", fetchError);
+      throw new Error(`Failed to fetch document: ${fetchError.message}`);
     }
 
+    if (!processedDoc) {
+      console.error("No processed document found for ID:", documentId);
+      throw new Error("Document not found");
+    }
+
+    if (!processedDoc.anonymized_text) {
+      console.error("No anonymized text found for document:", documentId);
+      throw new Error("No anonymized text available for cleaning");
+    }
+
+    console.info(`Anonymized text length: ${processedDoc.anonymized_text.length} characters`);
     console.info("Calling Lovable AI to clean text...");
 
     // Call Lovable AI to clean the text
@@ -74,7 +93,11 @@ Vráť CELÝ opravený text.`
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error("AI API error:", aiResponse.status, errorText);
+      console.error("AI API error details:", {
+        status: aiResponse.status,
+        statusText: aiResponse.statusText,
+        body: errorText
+      });
       
       if (aiResponse.status === 429) {
         throw new Error("Rate limit exceeded. Please try again later.");
@@ -83,15 +106,27 @@ Vráť CELÝ opravený text.`
         throw new Error("Payment required. Please add credits to your Lovable AI workspace.");
       }
       
-      throw new Error(`AI API error: ${aiResponse.status}`);
+      throw new Error(`AI API error: ${aiResponse.status} - ${errorText}`);
     }
 
     const aiData = await aiResponse.json();
+    
+    if (!aiData.choices || !aiData.choices[0] || !aiData.choices[0].message) {
+      console.error("Invalid AI response structure:", aiData);
+      throw new Error("Invalid response from AI service");
+    }
+
     const cleanedText = aiData.choices[0].message.content;
 
-    console.info("AI text cleaning completed");
+    if (!cleanedText) {
+      console.error("AI returned empty cleaned text");
+      throw new Error("AI service returned empty text");
+    }
+
+    console.info(`AI text cleaning completed. Cleaned text length: ${cleanedText.length} characters`);
 
     // Save the cleaned text separately
+    console.info("Saving cleaned text to database...");
     const { error: updateError } = await supabase
       .from("processed_documents")
       .update({
@@ -100,20 +135,38 @@ Vráť CELÝ opravený text.`
       .eq("document_id", documentId);
 
     if (updateError) {
+      console.error("Failed to update processed_documents:", updateError);
       throw new Error(`Failed to update document: ${updateError.message}`);
     }
 
-    // Update document status
-    const { error: statusError } = await supabase
+    // Update document status only if not already approved
+    console.info("Checking document status...");
+    const { data: docData, error: docFetchError } = await supabase
       .from("documents")
-      .update({ status: "ready_for_review" })
-      .eq("id", documentId);
+      .select("status")
+      .eq("id", documentId)
+      .single();
 
-    if (statusError) {
-      throw new Error(`Failed to update document status: ${statusError.message}`);
+    if (docFetchError) {
+      console.error("Failed to fetch document status:", docFetchError);
     }
 
-    console.info(`Text cleaning completed for document ${documentId}`);
+    if (docData && docData.status !== "approved") {
+      console.info("Updating document status to ready_for_review...");
+      const { error: statusError } = await supabase
+        .from("documents")
+        .update({ status: "ready_for_review" })
+        .eq("id", documentId);
+
+      if (statusError) {
+        console.error("Failed to update document status:", statusError);
+        throw new Error(`Failed to update document status: ${statusError.message}`);
+      }
+    } else {
+      console.info("Document already approved, skipping status update");
+    }
+
+    console.info(`=== Text cleaning completed successfully for document ${documentId} ===`);
 
     return new Response(
       JSON.stringify({ 

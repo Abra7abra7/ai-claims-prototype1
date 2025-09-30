@@ -141,19 +141,42 @@ export default function DocumentProcessor() {
 
   const cleanAnonymizedText = async () => {
     if (!docId) return;
+    
+    if (!processedDoc?.anonymized_text) {
+      toast({ 
+        title: "Nemožno vyčistiť text", 
+        description: "Najprv musí byť dokument anonymizovaný",
+        variant: "destructive" 
+      });
+      return;
+    }
+
     setProcessing(true);
     try {
+      console.log("Starting text cleaning for document:", docId);
+      
       const { data, error } = await supabase.functions.invoke("clean-anonymized-text", {
         body: { documentId: docId },
       });
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      console.log("Cleaning response:", { data, error });
 
-      await supabase
-        .from("documents")
-        .update({ status: "ready_for_review" })
-        .eq("id", docId);
+      if (error) {
+        console.error("Cleaning error:", error);
+        throw error;
+      }
+      if (data?.error) {
+        console.error("Cleaning data error:", data.error);
+        throw new Error(data.error);
+      }
+
+      // Update document status only if it's not already approved
+      if (document?.status !== "approved") {
+        await supabase
+          .from("documents")
+          .update({ status: "ready_for_review" })
+          .eq("id", docId);
+      }
 
       await supabase
         .from("processed_documents")
@@ -169,7 +192,12 @@ export default function DocumentProcessor() {
 
       await fetchDocument();
     } catch (error: any) {
-      toast({ title: "Chyba pri čistení textu", description: error.message, variant: "destructive" });
+      console.error("Text cleaning failed:", error);
+      toast({ 
+        title: "Chyba pri čistení textu", 
+        description: error.message || "Neznáma chyba pri čistení textu", 
+        variant: "destructive" 
+      });
     } finally {
       setProcessing(false);
     }
@@ -300,19 +328,56 @@ export default function DocumentProcessor() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      Vyčistený text (upraviteľný)
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium">
+                        Vyčistený text (upraviteľný)
+                      </label>
+                      {!processedDoc?.cleaned_text && processedDoc?.anonymized_text && (
+                        <span className="text-xs text-warning">Čaká na vyčistenie</span>
+                      )}
+                    </div>
                     <Textarea
                       value={editedText}
                       onChange={(e) => setEditedText(e.target.value)}
                       rows={20}
                       className="font-mono text-sm"
                       disabled={document.status === "approved"}
-                      placeholder="Text sa zobrazí po vyčistení..."
+                      placeholder={
+                        !processedDoc?.anonymized_text 
+                          ? "Text sa zobrazí po anonymizácii..." 
+                          : !processedDoc?.cleaned_text
+                          ? "Kliknite na tlačidlo 'Vyčistiť text' pre opravu gramatiky"
+                          : ""
+                      }
                     />
                   </div>
                 </div>
+
+                {/* Manual cleaning button - shown when anonymized text exists but cleaned text doesn't */}
+                {processedDoc?.anonymized_text && !processedDoc?.cleaned_text && (
+                  <Button 
+                    onClick={cleanAnonymizedText} 
+                    disabled={processing} 
+                    variant="secondary"
+                    className="w-full"
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    {processing ? "Čistím text..." : "Vyčistiť text (opraviť gramatiku)"}
+                  </Button>
+                )}
+
+                {/* Re-clean button - shown when cleaned text exists but user wants to re-run */}
+                {processedDoc?.cleaned_text && document.status !== "approved" && (
+                  <Button 
+                    onClick={cleanAnonymizedText} 
+                    disabled={processing} 
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    {processing ? "Znovu čistím text..." : "Znovu vyčistiť text"}
+                  </Button>
+                )}
 
                 {document.status === "ready_for_review" && (
                   <Button onClick={handleApprove} disabled={processing} className="w-full">
