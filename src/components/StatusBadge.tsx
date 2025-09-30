@@ -70,6 +70,39 @@ const statusConfig = {
     icon: CheckCircle2,
     className: "bg-success text-success-foreground",
   },
+  no_documents: {
+    label: "Čaká na dokumenty",
+    variant: "secondary" as const,
+    icon: FileCheck,
+  },
+  processing: {
+    label: "Dokumenty sa spracovávajú",
+    variant: "default" as const,
+    icon: Loader2,
+  },
+  pending_approval: {
+    label: "Čaká na schválenie",
+    variant: "default" as const,
+    icon: Clock,
+    className: "bg-primary text-primary-foreground",
+  },
+  awaiting_analysis: {
+    label: "Čaká na analýzu",
+    variant: "default" as const,
+    icon: Clock,
+    className: "bg-primary text-primary-foreground",
+  },
+  analysis_in_progress: {
+    label: "Analýza prebieha",
+    variant: "default" as const,
+    icon: Loader2,
+  },
+  analysis_complete: {
+    label: "Analýza dokončená",
+    variant: "default" as const,
+    icon: CheckCircle2,
+    className: "bg-success text-success-foreground",
+  },
 };
 
 export const StatusBadge = ({ status }: StatusBadgeProps) => {
