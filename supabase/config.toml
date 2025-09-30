@@ -1,0 +1,4 @@
+project_id = "mmigoucitdlfsmbbrtfs"
+
+[functions.generate-report]
+verify_jwt = true

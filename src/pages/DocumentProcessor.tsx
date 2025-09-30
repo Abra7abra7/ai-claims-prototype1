@@ -1,0 +1,316 @@
+import { useEffect, useState } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Layout } from "@/components/Layout";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { StatusBadge } from "@/components/StatusBadge";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, Check, FileText, Sparkles } from "lucide-react";
+
+interface Document {
+  id: string;
+  file_name: string;
+  status: string;
+  claim_id: string;
+}
+
+interface ProcessedDocument {
+  ocr_text: string | null;
+  anonymized_text: string | null;
+  reviewed_text: string | null;
+}
+
+export default function DocumentProcessor() {
+  const { id, docId } = useParams();
+  const navigate = useNavigate();
+  const [document, setDocument] = useState<Document | null>(null);
+  const [processedDoc, setProcessedDoc] = useState<ProcessedDocument | null>(null);
+  const [editedText, setEditedText] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetchDocument();
+  }, [docId]);
+
+  const fetchDocument = async () => {
+    try {
+      const [docResult, processedResult] = await Promise.all([
+        supabase.from("documents").select("*").eq("id", docId).maybeSingle(),
+        supabase.from("processed_documents").select("*").eq("document_id", docId).maybeSingle(),
+      ]);
+
+      if (docResult.error) throw docResult.error;
+      
+      setDocument(docResult.data);
+      setProcessedDoc(processedResult.data);
+      
+      if (processedResult.data?.anonymized_text) {
+        setEditedText(processedResult.data.reviewed_text || processedResult.data.anonymized_text);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Chyba pri načítaní",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const simulateOCR = async () => {
+    setProcessing(true);
+    try {
+      // Simulate OCR processing
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      const simulatedText = `LEKÁRSKA SPRÁVA
+      
+Pacient: Ján Novák
+Rodné číslo: 850101/1234
+Adresa: Hlavná 123, 811 01 Bratislava
+Telefón: +421 912 345 678
+
+Dátum vyšetrenia: 15. januára 2025
+
+Diagnóza: Zlomenina predlaktia vpravo (S52.5)
+
+Anamnéza:
+Pacient prišiel na vyšetrenie po páde z bicykla dňa 14. januára 2025. Udáva bolesť v oblasti pravého predlaktia a obmedzenú pohyblivosť.
+
+Objektívne vyšetrenie:
+Zjavná deformita v oblasti pravého predlaktia, otok, hematóm. Distálna cirkulácia a senzitivita zachovaná.
+
+RTG vyšetrenie:
+Potvrdená zlomenina distálneho rádia s dislokáciou.
+
+Liečba:
+Vykonaná repozícia a imobilizácia sádrovou dlahou. Odporúčaná kontrola u ortopéda po 7 dňoch.
+
+Práceneschopnosť: 6 týždňov
+
+MUDr. Peter Horák
+Traumatológia`;
+
+      // Update document status
+      await supabase
+        .from("documents")
+        .update({ status: "ocr_complete" })
+        .eq("id", docId);
+
+      // Create or update processed document
+      const { error } = await supabase
+        .from("processed_documents")
+        .upsert({
+          document_id: docId,
+          ocr_text: simulatedText,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "OCR dokončené",
+        description: "Text bol extrahovaný z dokumentu",
+      });
+
+      // Start anonymization immediately
+      await simulateAnonymization(simulatedText);
+    } catch (error: any) {
+      toast({
+        title: "Chyba",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const simulateAnonymization = async (ocrText: string) => {
+    setProcessing(true);
+    try {
+      // Simulate anonymization
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      
+      const anonymizedText = ocrText
+        .replace(/Ján Novák/g, "[MENO]")
+        .replace(/850101\/1234/g, "[RODNÉ_ČÍSLO]")
+        .replace(/Hlavná 123, 811 01 Bratislava/g, "[ADRESA]")
+        .replace(/\+421 912 345 678/g, "[TELEFÓN]")
+        .replace(/MUDr\. Peter Horák/g, "[LEKÁR]");
+
+      // Update status
+      await supabase
+        .from("documents")
+        .update({ status: "ready_for_review" })
+        .eq("id", docId);
+
+      // Update processed document
+      const { error } = await supabase
+        .from("processed_documents")
+        .update({
+          anonymized_text: anonymizedText,
+        })
+        .eq("document_id", docId);
+
+      if (error) throw error;
+
+      setEditedText(anonymizedText);
+      
+      toast({
+        title: "Anonymizácia dokončená",
+        description: "Citlivé údaje boli odstránené",
+      });
+
+      fetchDocument();
+    } catch (error: any) {
+      toast({
+        title: "Chyba",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    setProcessing(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      // Update processed document
+      const { error } = await supabase
+        .from("processed_documents")
+        .update({
+          reviewed_text: editedText,
+          reviewed_by: user.id,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("document_id", docId);
+
+      if (error) throw error;
+
+      // Update document status
+      await supabase
+        .from("documents")
+        .update({ status: "approved" })
+        .eq("id", docId);
+
+      toast({
+        title: "Schválené",
+        description: "Text bol schválený a je pripravený na generovanie reportu",
+      });
+
+      fetchDocument();
+    } catch (error: any) {
+      toast({
+        title: "Chyba",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleGenerateReport = () => {
+    navigate(`/claim/${id}/document/${docId}/report`);
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="text-center py-12">Načítavam...</div>
+      </Layout>
+    );
+  }
+
+  if (!document) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <p className="text-muted-foreground mb-4">Dokument nebol nájdený</p>
+          <Link to={`/claim/${id}`}>
+            <Button variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Späť
+            </Button>
+          </Link>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Link to={`/claim/${id}`}>
+            <Button variant="outline" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold text-foreground">{document.file_name}</h1>
+            <p className="text-muted-foreground mt-1">Spracovanie dokumentu</p>
+          </div>
+          <StatusBadge status={document.status} />
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Workflow spracovania</CardTitle>
+            <CardDescription>
+              Sledujte postup spracovania dokumentu
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {document.status === "uploaded" && (
+              <Button onClick={simulateOCR} disabled={processing} className="w-full">
+                <FileText className="h-4 w-4 mr-2" />
+                {processing ? "Spracovávam OCR..." : "Spustiť OCR spracovanie"}
+              </Button>
+            )}
+
+            {(document.status === "ready_for_review" || document.status === "approved") && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">
+                    Anonymizovaný text (kontrola a úprava)
+                  </label>
+                  <Textarea
+                    value={editedText}
+                    onChange={(e) => setEditedText(e.target.value)}
+                    rows={20}
+                    className="font-mono text-sm"
+                    disabled={document.status === "approved"}
+                  />
+                </div>
+
+                {document.status === "ready_for_review" && (
+                  <Button onClick={handleApprove} disabled={processing} className="w-full">
+                    <Check className="h-4 w-4 mr-2" />
+                    {processing ? "Schvaľujem..." : "Schváliť text"}
+                  </Button>
+                )}
+
+                {document.status === "approved" && (
+                  <Button onClick={handleGenerateReport} className="w-full">
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generovať AI report
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </Layout>
+  );
+}
