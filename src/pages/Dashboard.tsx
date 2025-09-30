@@ -116,14 +116,32 @@ export default function Dashboard() {
         status: "no_documents",
         label: "Čaká na dokumenty",
         percent: 0,
+        details: "Zatiaľ neboli nahrané žiadne dokumenty",
       };
     }
 
+    // Calculate progress based on document stages
+    let totalProgress = 0;
+    totalProgress += uploadedDocs * 25;
+    totalProgress += processingDocs * 50;
+    totalProgress += readyForReviewDocs * 75;
+    totalProgress += (approvedDocs + reportGeneratedDocs) * 100;
+
+    const percent = totalDocs > 0 ? Math.round(totalProgress / totalDocs) : 0;
+
+    // Build detailed status message
+    let details = `${reportGeneratedDocs}/${totalDocs} dokončených`;
+    if (processingDocs > 0) details += `, ${processingDocs} sa spracováva`;
+    if (readyForReviewDocs > 0) details += `, ${readyForReviewDocs} čaká na kontrolu`;
+    if (uploadedDocs > 0) details += `, ${uploadedDocs} nahraných`;
+
+    // Determine overall status
     if (reportGeneratedDocs === totalDocs && totalReports === totalDocs) {
       return {
         status: "analysis_complete",
         label: "Analýza dokončená",
         percent: 100,
+        details: "Všetky dokumenty spracované a reporty vygenerované",
       };
     }
 
@@ -132,6 +150,7 @@ export default function Dashboard() {
         status: "analysis_in_progress",
         label: "Analýza prebieha",
         percent: 75 + (totalReports / totalDocs) * 25,
+        details: `${totalReports}/${totalDocs} analýz dokončených`,
       };
     }
 
@@ -140,6 +159,16 @@ export default function Dashboard() {
         status: "awaiting_analysis",
         label: "Čaká na analýzu",
         percent: 75,
+        details: "Dokumenty schválené, čaká sa na generovanie reportov",
+      };
+    }
+
+    if (reportGeneratedDocs > 0) {
+      return {
+        status: "analysis_in_progress",
+        label: "Analýza prebieha",
+        percent,
+        details,
       };
     }
 
@@ -148,21 +177,42 @@ export default function Dashboard() {
         status: "pending_approval",
         label: "Čaká na schválenie",
         percent: 50 + ((approvedDocs + readyForReviewDocs) / totalDocs) * 25,
+        details,
       };
     }
 
-    if (processingDocs > 0 || uploadedDocs > 0) {
+    if (processingDocs > 0) {
       return {
         status: "processing",
         label: "Dokumenty sa spracovávajú",
-        percent: ((totalDocs - processingDocs - uploadedDocs) / totalDocs) * 50,
+        percent,
+        details: `${processingDocs} dokumentov sa spracováva (OCR, anonymizácia)`,
+      };
+    }
+
+    if (uploadedDocs === totalDocs) {
+      return {
+        status: "uploaded",
+        label: "Nahrané",
+        percent: 25,
+        details: "Všetky dokumenty nahrané, čaká sa na spracovanie",
+      };
+    }
+
+    if (uploadedDocs > 0) {
+      return {
+        status: "in_progress",
+        label: "V procese",
+        percent,
+        details: `${uploadedDocs}/${totalDocs} dokumentov nahraných`,
       };
     }
 
     return {
-      status: "unknown",
-      label: "Neznámy stav",
+      status: "new",
+      label: "Nová",
       percent: 0,
+      details: "Pripravené na nahranie dokumentov",
     };
   };
 
@@ -547,6 +597,17 @@ export default function Dashboard() {
                         <span className="font-medium">{Math.round(claim.progressPercent)}%</span>
                       </div>
                       <Progress value={claim.progressPercent} className="h-2" />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {getWorkflowStatus(
+                          claim.totalDocuments,
+                          claim.uploadedDocs,
+                          claim.processingDocs,
+                          claim.readyForReviewDocs,
+                          claim.approvedDocs,
+                          claim.reportGeneratedDocs,
+                          claim.totalReports
+                        ).details}
+                      </p>
                     </div>
                   )}
 
@@ -657,11 +718,24 @@ export default function Dashboard() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2 min-w-[120px]">
-                        <Progress value={claim.progressPercent} className="h-2 flex-1" />
-                        <span className="text-xs font-medium min-w-[35px]">
-                          {Math.round(claim.progressPercent)}%
-                        </span>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <Progress value={claim.progressPercent} className="h-2 flex-1" />
+                          <span className="text-xs font-medium min-w-[35px]">
+                            {Math.round(claim.progressPercent)}%
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {getWorkflowStatus(
+                            claim.totalDocuments,
+                            claim.uploadedDocs,
+                            claim.processingDocs,
+                            claim.readyForReviewDocs,
+                            claim.approvedDocs,
+                            claim.reportGeneratedDocs,
+                            claim.totalReports
+                          ).details}
+                        </p>
                       </div>
                     </TableCell>
                     <TableCell>
