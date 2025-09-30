@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, FileText, Calendar } from "lucide-react";
+import { Plus, FileText, Calendar, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { sk } from "date-fns/locale";
 
@@ -28,6 +29,7 @@ export default function Dashboard() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [newClaim, setNewClaim] = useState({
     claim_number: "",
     client_name: "",
@@ -38,7 +40,21 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchClaims();
+    checkAdminRole();
   }, []);
+
+  const checkAdminRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!data);
+    }
+  };
 
   const fetchClaims = async () => {
     try {
@@ -96,6 +112,30 @@ export default function Dashboard() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteClaim = async (claimId: string) => {
+    try {
+      const { error } = await supabase
+        .from("claims")
+        .delete()
+        .eq("id", claimId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Claim zmazaný",
+        description: "Poistná udalosť bola úspešne odstránená",
+      });
+
+      fetchClaims();
+    } catch (error: any) {
+      toast({
+        title: "Chyba pri mazaní",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -204,19 +244,54 @@ export default function Dashboard() {
         ) : (
           <div className="grid gap-4">
             {claims.map((claim) => (
-              <Link key={claim.id} to={`/claim/${claim.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
+              <Card key={claim.id} className="hover:shadow-md transition-shadow">
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <Link to={`/claim/${claim.id}`} className="flex-1">
                       <div>
                         <CardTitle>{claim.claim_number}</CardTitle>
                         <CardDescription className="mt-1">
                           {claim.client_name} • {claim.claim_type}
                         </CardDescription>
                       </div>
+                    </Link>
+                    <div className="flex items-center gap-2">
                       <StatusBadge status={claim.status} />
+                      {isAdmin && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive h-8 w-8"
+                              onClick={(e) => e.preventDefault()}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Zmazať claim</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Ste si istí, že chcete zmazať claim "{claim.claim_number}"? Táto akcia zmaže aj všetky súvisiace dokumenty a reporty. Táto akcia sa nedá vrátiť späť.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Zrušiť</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteClaim(claim.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Zmazať
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </div>
-                  </CardHeader>
+                  </div>
+                </CardHeader>
+                <Link to={`/claim/${claim.id}`}>
                   <CardContent>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
@@ -233,8 +308,8 @@ export default function Dashboard() {
                       </div>
                     </div>
                   </CardContent>
-                </Card>
-              </Link>
+                </Link>
+              </Card>
             ))}
           </div>
         )}

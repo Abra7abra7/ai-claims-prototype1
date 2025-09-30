@@ -5,9 +5,10 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, FileText, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, FileText, Sparkles, Trash2 } from "lucide-react";
 
 interface Document {
   id: string;
@@ -31,11 +32,26 @@ export default function DocumentProcessor() {
   const [editedText, setEditedText] = useState("");
   const [processing, setProcessing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchDocument();
+    checkAdminRole();
   }, [docId]);
+
+  const checkAdminRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!data);
+    }
+  };
 
   const fetchDocument = async () => {
     try {
@@ -248,6 +264,30 @@ export default function DocumentProcessor() {
     navigate(`/claim/${id}/document/${docId}/report`);
   };
 
+  const handleDeleteDocument = async () => {
+    try {
+      const { error } = await supabase
+        .from("documents")
+        .delete()
+        .eq("id", docId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Dokument zmazaný",
+        description: "Dokument bol úspešne odstránený",
+      });
+
+      navigate(`/claim/${id}`);
+    } catch (error: any) {
+      toast({
+        title: "Chyba pri mazaní",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -285,7 +325,35 @@ export default function DocumentProcessor() {
             <h1 className="text-2xl font-bold text-foreground">{document.file_name}</h1>
             <p className="text-muted-foreground mt-1">Spracovanie dokumentu</p>
           </div>
-          <StatusBadge status={document.status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={document.status} />
+            {isAdmin && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="icon" className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Zmazať dokument</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Ste si istí, že chcete zmazať dokument "{document.file_name}"? Táto akcia sa nedá vrátiť späť a zmaže aj všetky súvisiace dáta.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Zrušiť</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDeleteDocument}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Zmazať
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         </div>
 
         <Card>

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
 
 interface Report {
   id: string;
@@ -19,14 +20,30 @@ interface Report {
 
 export default function ReportView() {
   const { id, docId } = useParams();
+  const navigate = useNavigate();
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchReport();
+    checkAdminRole();
   }, [docId]);
+
+  const checkAdminRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!data);
+    }
+  };
 
   const fetchReport = async () => {
     try {
@@ -146,6 +163,30 @@ export default function ReportView() {
     }
   };
 
+  const handleDeleteReport = async () => {
+    try {
+      const { error } = await supabase
+        .from("reports")
+        .delete()
+        .eq("id", report?.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Report zmazaný",
+        description: "AI analýza bola úspešne odstránená",
+      });
+
+      navigate(`/claim/${id}/document/${docId}`);
+    } catch (error: any) {
+      toast({
+        title: "Chyba pri mazaní",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading || generating) {
     return (
       <Layout>
@@ -188,6 +229,32 @@ export default function ReportView() {
             <h1 className="text-2xl font-bold text-foreground">AI Analýza a Report</h1>
             <p className="text-muted-foreground mt-1">Vygenerovaný pomocou Gemini AI</p>
           </div>
+          {isAdmin && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="icon" className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Zmazať report</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Ste si istí, že chcete zmazať tento AI report? Táto akcia sa nedá vrátiť späť.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Zrušiť</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeleteReport}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Zmazať
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
 
         <div className="space-y-6">

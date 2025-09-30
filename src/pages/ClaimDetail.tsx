@@ -5,11 +5,12 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, FileText, Calendar } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Calendar, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { sk } from "date-fns/locale";
 
@@ -45,11 +46,26 @@ export default function ClaimDetail() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchClaimDetail();
+    checkAdminRole();
   }, [id]);
+
+  const checkAdminRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!data);
+    }
+  };
 
   const fetchClaimDetail = async () => {
     try {
@@ -165,6 +181,30 @@ export default function ClaimDetail() {
 
     // Redirect to first document for processing
     window.location.href = `/claim/${id}/batch-process`;
+  };
+
+  const handleDeleteDocument = async (documentId: string) => {
+    try {
+      const { error } = await supabase
+        .from("documents")
+        .delete()
+        .eq("id", documentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Dokument zmazaný",
+        description: "Dokument bol úspešne odstránený",
+      });
+
+      fetchClaimDetail();
+    } catch (error: any) {
+      toast({
+        title: "Chyba pri mazaní",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   if (loading) {
@@ -305,22 +345,48 @@ export default function ClaimDetail() {
               ) : (
                 <div className="space-y-3">
                   {documents.map((doc) => (
-                    <Link key={doc.id} to={`/claim/${id}/document/${doc.id}`}>
-                      <div className="flex items-center justify-between p-3 border rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer">
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-5 w-5 text-primary" />
-                          <div>
-                            <p className="font-medium text-sm">{doc.file_name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(doc.created_at), "d. MMM yyyy, HH:mm", {
-                                locale: sk,
-                              })}
-                            </p>
-                          </div>
+                    <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-secondary/50 transition-colors">
+                      <Link to={`/claim/${id}/document/${doc.id}`} className="flex items-center gap-3 flex-1">
+                        <FileText className="h-5 w-5 text-primary" />
+                        <div>
+                          <p className="font-medium text-sm">{doc.file_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(doc.created_at), "d. MMM yyyy, HH:mm", {
+                              locale: sk,
+                            })}
+                          </p>
                         </div>
+                      </Link>
+                      <div className="flex items-center gap-2">
                         <StatusBadge status={doc.status} />
+                        {isAdmin && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Zmazať dokument</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Ste si istí, že chcete zmazať dokument "{doc.file_name}"? Táto akcia sa nedá vrátiť späť.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Zrušiť</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteDocument(doc.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Zmazať
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
                       </div>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               )}
