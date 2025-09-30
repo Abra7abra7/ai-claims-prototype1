@@ -136,7 +136,7 @@ export default function Dashboard() {
     if (uploadedDocs > 0) details += `, ${uploadedDocs} nahraných`;
 
     // Determine overall status
-    if (reportGeneratedDocs === totalDocs && totalReports === totalDocs) {
+    if (reportGeneratedDocs === totalDocs) {
       return {
         status: "analysis_complete",
         label: "Analýza dokončená",
@@ -145,12 +145,12 @@ export default function Dashboard() {
       };
     }
 
-    if (approvedDocs === totalDocs && totalReports > 0) {
+    if (reportGeneratedDocs > 0) {
       return {
         status: "analysis_in_progress",
         label: "Analýza prebieha",
-        percent: 75 + (totalReports / totalDocs) * 25,
-        details: `${totalReports}/${totalDocs} analýz dokončených`,
+        percent: 50 + (reportGeneratedDocs / totalDocs) * 50,
+        details: `${reportGeneratedDocs}/${totalDocs} reportov vygenerovaných`,
       };
     }
 
@@ -163,12 +163,12 @@ export default function Dashboard() {
       };
     }
 
-    if (reportGeneratedDocs > 0) {
+    if (approvedDocs > 0) {
       return {
-        status: "analysis_in_progress",
-        label: "Analýza prebieha",
-        percent,
-        details,
+        status: "pending_approval",
+        label: "Čaká na schválenie",
+        percent: 50 + (approvedDocs / totalDocs) * 25,
+        details: `${approvedDocs}/${totalDocs} dokumentov schválených`,
       };
     }
 
