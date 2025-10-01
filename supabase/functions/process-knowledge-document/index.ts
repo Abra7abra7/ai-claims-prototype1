@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,7 +13,68 @@ serve(async (req) => {
   }
 
   try {
-    const { title, content, policyTypes, categories, sourceDocument } = await req.json();
+    const contentType = req.headers.get("content-type") || "";
+    let title: string;
+    let content: string;
+    let policyTypes: string[] = [];
+    let categories: string[] = [];
+    let sourceDocument: string | null = null;
+
+    // Handle file upload
+    if (contentType.includes("multipart/form-data")) {
+      console.log("Processing file upload...");
+      
+      const formData = await req.formData();
+      const file = formData.get("file") as File;
+      
+      if (!file) {
+        throw new Error("No file provided");
+      }
+
+      console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${file.size}`);
+      
+      // Set title and source from filename
+      title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
+      sourceDocument = file.name;
+
+      // Extract text based on file type
+      const fileName = file.name.toLowerCase();
+      
+      if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
+        console.log("Processing text file...");
+        content = await file.text();
+      } else if (fileName.endsWith('.pdf')) {
+        console.log("Processing PDF with OCR...");
+        content = await extractTextFromPDF(file);
+      } else if (fileName.endsWith('.docx')) {
+        throw new Error("DOCX support coming soon. Please convert to PDF or TXT.");
+      } else {
+        throw new Error("Unsupported file type. Use PDF, TXT, or MD files.");
+      }
+
+      if (!content || content.trim().length < 10) {
+        throw new Error("Could not extract meaningful text from the document");
+      }
+
+      console.log(`Extracted ${content.length} characters from ${file.name}`);
+
+      // Use AI to suggest categories and policy types
+      console.log("Analyzing document with AI...");
+      const suggestions = await analyzeDocumentContent(content, title);
+      policyTypes = suggestions.policyTypes;
+      categories = suggestions.categories;
+      
+      console.log(`AI suggested policy types: ${policyTypes.join(', ')}`);
+      console.log(`AI suggested categories: ${categories.join(', ')}`);
+    } else {
+      // Handle JSON input (legacy support)
+      const body = await req.json();
+      title = body.title;
+      content = body.content;
+      policyTypes = body.policyTypes || [];
+      categories = body.categories || [];
+      sourceDocument = body.sourceDocument;
+    }
 
     // Import Supabase client
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
@@ -132,3 +194,227 @@ serve(async (req) => {
     );
   }
 });
+
+// Extract text from PDF using Google Document AI
+async function extractTextFromPDF(file: File): Promise<string> {
+  const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS2');
+  if (!googleCredentials) {
+    throw new Error('GOOGLE_CLOUD_CREDENTIALS2 not configured');
+  }
+
+  const credentials = JSON.parse(googleCredentials);
+  
+  // Convert file to base64
+  const arrayBuffer = await file.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  
+  let binaryString = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+    binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  const base64Content = btoa(binaryString);
+
+  // Get access token
+  const now = Math.floor(Date.now() / 1000);
+  const jwtHeader = { alg: "RS256", typ: "JWT" };
+  const jwtClaim = {
+    iss: credentials.client_email,
+    scope: "https://www.googleapis.com/auth/cloud-platform",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now,
+  };
+
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: await createJWT(jwtHeader, jwtClaim, credentials.private_key),
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    throw new Error(`Failed to get access token: ${tokenResponse.statusText}`);
+  }
+
+  const { access_token } = await tokenResponse.json();
+
+  // Call Document AI
+  const processorUrl = "https://eu-documentai.googleapis.com/v1/projects/485328765227/locations/eu/processors/1b186d456b875b89:process";
+  
+  const documentAIResponse = await fetch(processorUrl, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      rawDocument: {
+        content: base64Content,
+        mimeType: 'application/pdf',
+      },
+    }),
+  });
+
+  if (!documentAIResponse.ok) {
+    throw new Error(`Document AI processing failed: ${documentAIResponse.statusText}`);
+  }
+
+  const result = await documentAIResponse.json();
+  return result.document?.text || '';
+}
+
+// Use AI to analyze document and suggest categories/policy types
+async function analyzeDocumentContent(content: string, title: string): Promise<{
+  policyTypes: string[];
+  categories: string[];
+}> {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  if (!LOVABLE_API_KEY) {
+    console.log("LOVABLE_API_KEY not configured, using defaults");
+    return { policyTypes: [], categories: [] };
+  }
+
+  // Take first 2000 characters for analysis
+  const contentSample = content.substring(0, 2000);
+
+  try {
+    const response = await fetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: `You are an insurance document analyzer. Analyze documents and suggest:
+1. Policy types (zdravotné, životné, úrazové, majetkové, cestovné, auto, domácnosť, zodpovednosť)
+2. Categories (vylúčenia, podmienky, krytie, povinnosti, nároky, poplatky, definície, všeobecné)
+
+Respond ONLY with JSON: {"policyTypes": ["type1", "type2"], "categories": ["cat1", "cat2"]}
+Choose 1-3 most relevant items for each. Use Slovak terms.`
+            },
+            {
+              role: "user",
+              content: `Analyze this insurance document:\n\nTitle: ${title}\n\nContent:\n${contentSample}`
+            }
+          ],
+          tools: [{
+            type: "function",
+            function: {
+              name: "categorize_document",
+              description: "Categorize insurance document",
+              parameters: {
+                type: "object",
+                properties: {
+                  policyTypes: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "1-3 relevant policy types"
+                  },
+                  categories: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "1-3 relevant categories"
+                  }
+                },
+                required: ["policyTypes", "categories"],
+                additionalProperties: false
+              }
+            }
+          }],
+          tool_choice: { type: "function", function: { name: "categorize_document" } }
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error("AI analysis failed:", response.status);
+      return { policyTypes: [], categories: [] };
+    }
+
+    const data = await response.json();
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    
+    if (toolCall?.function?.arguments) {
+      const result = JSON.parse(toolCall.function.arguments);
+      return {
+        policyTypes: result.policyTypes || [],
+        categories: result.categories || []
+      };
+    }
+
+    return { policyTypes: [], categories: [] };
+  } catch (error) {
+    console.error("Error in AI analysis:", error);
+    return { policyTypes: [], categories: [] };
+  }
+}
+
+// JWT helper functions
+async function createJWT(header: any, claim: any, privateKey: string): Promise<string> {
+  const encoder = new TextEncoder();
+  
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedClaim = base64UrlEncode(JSON.stringify(claim));
+  const message = `${encodedHeader}.${encodedClaim}`;
+  
+  const key = await importPrivateKey(privateKey);
+  const signature = await crypto.subtle.sign(
+    { name: "RSASSA-PKCS1-v1_5" },
+    key,
+    encoder.encode(message)
+  );
+  
+  return `${message}.${base64UrlEncode(signature)}`;
+}
+
+function base64UrlEncode(data: string | ArrayBuffer): string {
+  let binaryString = '';
+  
+  if (typeof data === 'string') {
+    const bytes = new TextEncoder().encode(data);
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+  } else {
+    const bytes = new Uint8Array(data);
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+  }
+  
+  return btoa(binaryString)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+async function importPrivateKey(pem: string): Promise<CryptoKey> {
+  const pemContents = pem
+    .replace('-----BEGIN PRIVATE KEY-----', '')
+    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/\s/g, '');
+  
+  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+  
+  return await crypto.subtle.importKey(
+    'pkcs8',
+    binaryDer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+}

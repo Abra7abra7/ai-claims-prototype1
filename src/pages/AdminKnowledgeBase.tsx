@@ -1,14 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, Upload, Trash2, Database } from "lucide-react";
+import { Loader2, ArrowLeft, Upload, Trash2, Database, FileText, CheckCircle2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,20 +29,22 @@ interface KnowledgeEntry {
   created_at: string;
 }
 
+interface UploadFile {
+  file: File;
+  status: 'pending' | 'processing' | 'success' | 'error';
+  progress: number;
+  message?: string;
+  result?: any;
+}
+
 const AdminKnowledgeBase = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-
-  // Form state
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [policyTypes, setPolicyTypes] = useState("");
-  const [categories, setCategories] = useState("");
-  const [sourceDocument, setSourceDocument] = useState("");
+  const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     checkAdminRole();
@@ -98,57 +98,125 @@ const AdminKnowledgeBase = () => {
     }
   };
 
-  const handleUpload = async () => {
-    if (!title.trim() || !content.trim()) {
+  const handleFileSelect = useCallback((files: FileList | null) => {
+    if (!files) return;
+
+    const validFiles = Array.from(files).filter(file => {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      return ['pdf', 'txt', 'md', 'docx'].includes(ext || '');
+    });
+
+    if (validFiles.length === 0) {
       toast({
-        title: "Chýbajúce údaje",
-        description: "Vyplňte prosím názov a obsah dokumentu.",
+        title: "Chyba",
+        description: "Podporované sú len súbory: PDF, TXT, MD, DOCX",
         variant: "destructive",
       });
       return;
     }
 
-    setUploading(true);
+    const newUploadFiles: UploadFile[] = validFiles.map(file => ({
+      file,
+      status: 'pending',
+      progress: 0
+    }));
+
+    setUploadFiles(prev => [...prev, ...newUploadFiles]);
+    processFiles(newUploadFiles);
+  }, []);
+
+  const processFiles = async (filesToProcess: UploadFile[]) => {
+    for (const uploadFile of filesToProcess) {
+      await processFile(uploadFile);
+    }
+    
+    await fetchEntries();
+  };
+
+  const processFile = async (uploadFile: UploadFile) => {
+    const updateFileStatus = (updates: Partial<UploadFile>) => {
+      setUploadFiles(prev => prev.map(f => 
+        f.file === uploadFile.file ? { ...f, ...updates } : f
+      ));
+    };
+
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "process-knowledge-document",
+      updateFileStatus({ status: 'processing', progress: 20, message: 'Nahrávam súbor...' });
+
+      const formData = new FormData();
+      formData.append('file', uploadFile.file);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Nie ste prihlásený');
+
+      updateFileStatus({ progress: 40, message: 'Spracovávam dokument...' });
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-knowledge-document`,
         {
-          body: {
-            title: title.trim(),
-            content: content.trim(),
-            policyTypes: policyTypes.split(",").map(t => t.trim()).filter(Boolean),
-            categories: categories.split(",").map(c => c.trim()).filter(Boolean),
-            sourceDocument: sourceDocument.trim() || null,
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
           },
+          body: formData,
         }
       );
 
-      if (error) throw error;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Spracovanie zlyhalo');
+      }
 
-      toast({
-        title: "Úspešné nahratie",
-        description: `Vytvorených ${data.chunks_processed} znalostných chunkov.`,
+      updateFileStatus({ progress: 80, message: 'Generujem embeddings...' });
+
+      const result = await response.json();
+
+      updateFileStatus({ 
+        status: 'success', 
+        progress: 100, 
+        message: `Úspešne spracovaných ${result.chunks_processed} chunkov`,
+        result 
       });
 
-      // Reset form
-      setTitle("");
-      setContent("");
-      setPolicyTypes("");
-      setCategories("");
-      setSourceDocument("");
-
-      // Refresh entries
-      fetchEntries();
-    } catch (error) {
-      console.error("Error uploading document:", error);
       toast({
-        title: "Chyba nahrávania",
-        description: error instanceof Error ? error.message : "Neznáma chyba",
+        title: "Úspech",
+        description: `${uploadFile.file.name}: ${result.chunks_processed} chunkov`,
+      });
+
+    } catch (error) {
+      console.error('File processing error:', error);
+      updateFileStatus({ 
+        status: 'error', 
+        progress: 0,
+        message: error instanceof Error ? error.message : 'Nepodarilo sa spracovať súbor'
+      });
+
+      toast({
+        title: "Chyba",
+        description: `${uploadFile.file.name}: ${error instanceof Error ? error.message : 'Chyba spracovania'}`,
         variant: "destructive",
       });
-    } finally {
-      setUploading(false);
     }
+  };
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileSelect(e.dataTransfer.files);
+  }, [handleFileSelect]);
+
+  const clearUploadFiles = () => {
+    setUploadFiles([]);
   };
 
   const handleDelete = async () => {
@@ -207,81 +275,101 @@ const AdminKnowledgeBase = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
-              Nahrať nový dokument
+              Nahrať dokumenty
             </CardTitle>
             <CardDescription>
-              Dokument bude automaticky rozdelený na chunky a vektorovo indexovaný
+              Nahrajte PDF, TXT, MD alebo DOCX súbory. Všetko ostatné sa spracuje automaticky.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="title">Názov dokumentu *</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Napr. Všeobecné podmienky životného poistenia"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="content">Obsah dokumentu *</Label>
-              <Textarea
-                id="content"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Vložte celý text dokumentu..."
-                rows={8}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="policyTypes">Typy poistiek (oddelené čiarkou)</Label>
-              <Input
-                id="policyTypes"
-                value={policyTypes}
-                onChange={(e) => setPolicyTypes(e.target.value)}
-                placeholder="Napr. životné, úrazové, zdravotné"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="categories">Kategórie (oddelené čiarkou)</Label>
-              <Input
-                id="categories"
-                value={categories}
-                onChange={(e) => setCategories(e.target.value)}
-                placeholder="Napr. výluky, podmienky, plnenie"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="source">Zdroj dokumentu</Label>
-              <Input
-                id="source"
-                value={sourceDocument}
-                onChange={(e) => setSourceDocument(e.target.value)}
-                placeholder="Napr. VP_2024_v1.pdf"
-              />
-            </div>
-
-            <Button
-              onClick={handleUpload}
-              disabled={uploading}
-              className="w-full"
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`
+                border-2 border-dashed rounded-lg p-8 text-center transition-colors
+                ${isDragging ? 'border-primary bg-primary/5' : 'border-border'}
+                hover:border-primary/50 cursor-pointer
+              `}
+              onClick={() => document.getElementById('file-input')?.click()}
             >
-              {uploading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Spracúvam...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Nahrať a spracovať
-                </>
-              )}
-            </Button>
+              <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-lg font-medium mb-2">
+                Presuňte súbory sem alebo kliknite pre výber
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Podporované formáty: PDF, TXT, MD, DOCX
+              </p>
+              <input
+                id="file-input"
+                type="file"
+                multiple
+                accept=".pdf,.txt,.md,.docx"
+                onChange={(e) => handleFileSelect(e.target.files)}
+                className="hidden"
+              />
+            </div>
+
+            {uploadFiles.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">Spracovávané súbory ({uploadFiles.length})</h3>
+                  <Button variant="ghost" size="sm" onClick={clearUploadFiles}>
+                    Vyčistiť
+                  </Button>
+                </div>
+                
+                {uploadFiles.map((uploadFile, idx) => (
+                  <Card key={idx}>
+                    <CardContent className="pt-6">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            {uploadFile.status === 'success' && (
+                              <CheckCircle2 className="h-5 w-5 text-green-500" />
+                            )}
+                            {uploadFile.status === 'error' && (
+                              <XCircle className="h-5 w-5 text-destructive" />
+                            )}
+                            {uploadFile.status === 'processing' && (
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            )}
+                            <div>
+                              <p className="font-medium">{uploadFile.file.name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {(uploadFile.file.size / 1024).toFixed(1)} KB
+                              </p>
+                            </div>
+                          </div>
+                          <Badge variant={
+                            uploadFile.status === 'success' ? 'default' :
+                            uploadFile.status === 'error' ? 'destructive' :
+                            uploadFile.status === 'processing' ? 'secondary' : 'outline'
+                          }>
+                            {uploadFile.status === 'success' && 'Hotovo'}
+                            {uploadFile.status === 'error' && 'Chyba'}
+                            {uploadFile.status === 'processing' && 'Spracováva sa'}
+                            {uploadFile.status === 'pending' && 'Čaká'}
+                          </Badge>
+                        </div>
+                        
+                        {uploadFile.status === 'processing' && (
+                          <Progress value={uploadFile.progress} className="h-2" />
+                        )}
+                        
+                        {uploadFile.message && (
+                          <p className={`text-sm ${
+                            uploadFile.status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+                          }`}>
+                            {uploadFile.message}
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -375,6 +463,12 @@ const AdminKnowledgeBase = () => {
                               {cat}
                             </Badge>
                           ))}
+                        </div>
+                      )}
+                      {chunks[0].source_document && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <FileText className="h-4 w-4" />
+                          <span>{chunks[0].source_document}</span>
                         </div>
                       )}
                       <p className="text-sm text-muted-foreground">
