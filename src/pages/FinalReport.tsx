@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Download, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Sparkles, Database } from "lucide-react";
 
 interface Document {
   id: string;
@@ -48,8 +48,6 @@ export default function FinalReport() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [contexts, setContexts] = useState<InsuranceContext[]>([]);
-  const [selectedContexts, setSelectedContexts] = useState<string[]>([]);
   const [analysisTypes, setAnalysisTypes] = useState<AnalysisType[]>([]);
   const [selectedAnalysisType, setSelectedAnalysisType] = useState<string>("");
   const [customPrompt, setCustomPrompt] = useState("");
@@ -81,16 +79,12 @@ export default function FinalReport() {
         return;
       }
 
-      const [docsResult, contextsResult, analysisTypesResult] = await Promise.all([
+      const [docsResult, analysisTypesResult] = await Promise.all([
         supabase
           .from("documents")
           .select("*")
           .eq("claim_id", id)
           .eq("status", "approved"),
-        supabase
-          .from("insurance_context")
-          .select("*")
-          .eq("is_active", true),
         supabase
           .from("analysis_types")
           .select("*")
@@ -99,15 +93,10 @@ export default function FinalReport() {
       ]);
 
       if (docsResult.error) throw docsResult.error;
-      if (contextsResult.error) throw contextsResult.error;
       if (analysisTypesResult.error) throw analysisTypesResult.error;
 
       setDocuments(docsResult.data || []);
-      setContexts(contextsResult.data || []);
       setAnalysisTypes(analysisTypesResult.data || []);
-      
-      // Select all contexts by default
-      setSelectedContexts((contextsResult.data || []).map(c => c.id));
       
       // Select first analysis type by default
       if (analysisTypesResult.data && analysisTypesResult.data.length > 0) {
@@ -177,22 +166,17 @@ export default function FinalReport() {
         .filter(Boolean)
         .join("\n\n" + "=".repeat(80) + "\n\n");
 
-      // Get selected contexts
-      const selectedContextsData = contexts.filter(c => 
-        selectedContexts.includes(c.id)
-      );
-
       // Get selected analysis type
       const analysisType = analysisTypes.find(t => t.id === selectedAnalysisType);
 
-      // Call AI to generate comprehensive report
+      // Call AI to generate comprehensive report with semantic search
       const { data: aiResponse, error: aiError } = await supabase.functions.invoke("generate-final-report", {
         body: {
           documentsText: allTexts,
           claimInfo: claim,
-          insuranceContexts: selectedContextsData,
           customPrompt: customPrompt || null,
           analysisTypeId: selectedAnalysisType,
+          useSemanticSearch: true, // Enable automatic semantic search
         },
       });
 
@@ -346,29 +330,16 @@ ${report.justification}
 
             <Card>
               <CardHeader>
-                <CardTitle>Kontextové dokumenty</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5 text-primary" />
+                  Automatické vyhľadávanie kontextov
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {contexts.map(context => (
-                  <div key={context.id} className="flex items-start gap-3">
-                    <Checkbox
-                      checked={selectedContexts.includes(context.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedContexts([...selectedContexts, context.id]);
-                        } else {
-                          setSelectedContexts(selectedContexts.filter(c => c !== context.id));
-                        }
-                      }}
-                    />
-                    <div className="flex-1">
-                      <p className="font-medium">{context.title}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {context.context_type}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Systém automaticky vyhľadá relevantné informácie z vektorovej znalostnej bázy na základe typu poistky a detailov poistnej udalosti. 
+                  Používa sa sémantické vyhľadávanie s AI embeddings pre najrelevantnejšie výsledky.
+                </p>
               </CardContent>
             </Card>
 

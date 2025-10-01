@@ -14,6 +14,7 @@ import BatchProcess from "./pages/BatchProcess";
 import FinalReport from "./pages/FinalReport";
 import AdminAnalysisTypes from "./pages/AdminAnalysisTypes";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminKnowledgeBase from "./pages/AdminKnowledgeBase";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -130,6 +131,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <AdminAnalysisTypes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/knowledge-base"
+            element={
+              <ProtectedRoute>
+                <AdminKnowledgeBase />
               </ProtectedRoute>
             }
           />

@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { documentsText, claimInfo, insuranceContexts, customPrompt, analysisTypeId } = await req.json();
+    const { documentsText, claimInfo, customPrompt, analysisTypeId, useSemanticSearch = true } = await req.json();
 
     // Import Supabase client
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
@@ -38,14 +38,48 @@ Tvojou úlohou je analyzovať VŠETKY priložené lekárske správy a vytvoriť 
       }
     }
 
-    // Build context from insurance documents
+    // Build context using semantic search or fallback to static contexts
     let contextText = "";
-    if (insuranceContexts && insuranceContexts.length > 0) {
-      contextText = insuranceContexts
-        .map(
-          (ctx: any) => `[${ctx.context_type.toUpperCase()}]: ${ctx.title}\n${ctx.content}`
-        )
-        .join("\n\n");
+    
+    if (useSemanticSearch) {
+      console.log("Using semantic search for insurance context");
+      
+      // Create search query from claim information
+      const searchQuery = `${claimInfo.claim_type} poistná udalosť, číslo poistky: ${claimInfo.policy_number}, klient: ${claimInfo.client_name}`;
+      
+      // Call search-knowledge-base function
+      const searchResponse = await fetch(
+        `${supabaseUrl}/functions/v1/search-knowledge-base`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query: searchQuery,
+            policyTypes: [claimInfo.claim_type],
+            matchCount: 10,
+            matchThreshold: 0.6,
+          }),
+        }
+      );
+
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        if (searchData.results && searchData.results.length > 0) {
+          contextText = searchData.results
+            .map((result: any) => 
+              `[${result.categories?.join(", ") || "KONTEXT"}] (${(result.similarity * 100).toFixed(1)}% relevancia): ${result.chunk_text}`
+            )
+            .join("\n\n");
+          console.log(`Found ${searchData.results.length} relevant context chunks`);
+        } else {
+          console.log("No relevant context found via semantic search");
+        }
+      } else {
+        console.error("Semantic search failed, continuing without context");
+      }
     }
 
     // Build system prompt

@@ -255,6 +255,45 @@ const AdminDashboard = () => {
           </Badge>
         </div>
 
+        {/* Quick Actions */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = "/admin/analysis-types"}>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Typy analýz
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">Spravovať typy AI analýz a systémové prompty</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = "/admin/knowledge-base"}>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Database className="h-5 w-5 text-primary" />
+                Vektorová znalostná báza
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">Spravovať dokumenty a kontextové informácie</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = "/settings"}>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Nastavenia
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">Používatelia a systémové nastavenia</p>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* KPI Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
