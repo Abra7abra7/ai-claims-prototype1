@@ -117,36 +117,43 @@ serve(async (req) => {
       
       console.log(`Generating embedding for chunk ${i + 1}/${chunks.length}`);
 
-      // Generate embedding using Lovable AI with text-embedding model
-      const embeddingResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/embeddings",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "text-embedding-3-small",
-            input: chunk,
-            dimensions: 1536,
-          }),
-        }
-      );
-
-      if (!embeddingResponse.ok) {
-        const errorText = await embeddingResponse.text();
-        console.error("Embedding error:", embeddingResponse.status, errorText);
-        throw new Error(`Failed to generate embedding: ${embeddingResponse.status}`);
+      // Generate embedding using OpenAI embeddings API
+      // Note: Lovable AI doesn't support embeddings, so we use OpenAI directly
+      const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+      if (!OPENAI_API_KEY) {
+        throw new Error("OPENAI_API_KEY is required for generating embeddings");
       }
 
-      const embeddingData = await embeddingResponse.json();
-      const embedding = embeddingData.data[0].embedding;
+      try {
+        const embeddingResponse = await fetch(
+          "https://api.openai.com/v1/embeddings",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "text-embedding-3-small",
+              input: chunk,
+              dimensions: 1536,
+            }),
+          }
+        );
 
-      // Store in database
-      const { error: insertError } = await supabase
-        .from("insurance_knowledge_base")
-        .insert({
+        if (!embeddingResponse.ok) {
+          const errorText = await embeddingResponse.text();
+          console.error("Embedding error:", embeddingResponse.status, errorText);
+          throw new Error(`Failed to generate embedding: ${embeddingResponse.status} - ${errorText}`);
+        }
+
+        const embeddingData = await embeddingResponse.json();
+        const embedding = embeddingData.data[0].embedding;
+
+        // Store in database
+        const { error: insertError } = await supabase
+          .from("insurance_knowledge_base")
+          .insert({
           title,
           content,
           chunk_text: chunk,
@@ -158,15 +165,19 @@ serve(async (req) => {
           created_by: user.id,
         });
 
-      if (insertError) {
-        console.error("Insert error:", insertError);
-        throw insertError;
-      }
+        if (insertError) {
+          console.error("Insert error:", insertError);
+          throw insertError;
+        }
 
-      processedChunks.push({
-        chunk_index: i,
-        chunk_text: chunk.substring(0, 100) + "...",
-      });
+        processedChunks.push({
+          chunk_index: i,
+          chunk_text: chunk.substring(0, 100) + "...",
+        });
+      } catch (error) {
+        console.error(`Error processing chunk ${i + 1}:`, error);
+        throw error;
+      }
     }
 
     console.log(`Successfully processed ${chunks.length} chunks`);
