@@ -75,7 +75,9 @@ export function AppSidebar() {
   };
 
   const getNavClass = ({ isActive }: { isActive: boolean }) =>
-    isActive ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent/50";
+    isActive 
+      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" 
+      : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground";
 
   const mainItems = [
     { title: "Dashboard", url: "/", icon: Home },
@@ -91,10 +93,10 @@ export function AppSidebar() {
   return (
     <Sidebar className={collapsed ? "w-14" : "w-64"}>
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-4 py-3">
-          <Shield className="h-6 w-6 text-primary" />
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-sidebar-border">
+          <Shield className="h-6 w-6 text-sidebar-primary" />
           {!collapsed && (
-            <span className="text-lg font-bold text-foreground">
+            <span className="text-lg font-bold text-sidebar-foreground">
               Claims System
             </span>
           )}
@@ -103,7 +105,9 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Hlavné menu</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-sidebar-foreground/70 font-semibold">
+            Hlavné menu
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {mainItems.map((item) => (
@@ -124,7 +128,7 @@ export function AppSidebar() {
           <SidebarGroup>
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen}>
               <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-accent/50 rounded-md px-2 py-1">
+                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent rounded-md px-2 py-1 text-sidebar-foreground/70 font-semibold">
                   <span className="flex items-center gap-2">
                     <Shield className="h-4 w-4" />
                     {!collapsed && "Administrácia"}
@@ -159,19 +163,19 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
             <div className="flex items-center gap-2 px-2 py-2">
               <Avatar className="h-8 w-8">
-                <AvatarFallback>
+                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">
                   {userEmail.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               {!collapsed && (
                 <div className="flex-1 overflow-hidden">
-                  <p className="text-sm font-medium truncate">{userEmail}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm font-medium truncate text-sidebar-foreground">{userEmail}</p>
+                  <p className="text-xs text-sidebar-foreground/60">
                     {isAdmin ? "Administrátor" : "Likvidátor"}
                   </p>
                 </div>
@@ -179,7 +183,7 @@ export function AppSidebar() {
             </div>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleLogout}>
+            <SidebarMenuButton onClick={handleLogout} className="text-sidebar-foreground hover:bg-sidebar-accent">
               <LogOut className="h-4 w-4" />
               {!collapsed && <span>Odhlásiť sa</span>}
             </SidebarMenuButton>
