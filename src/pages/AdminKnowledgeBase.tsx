@@ -43,6 +43,7 @@ const AdminKnowledgeBase = () => {
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [deleteTitle, setDeleteTitle] = useState<string | null>(null);
+  const [deleteMode, setDeleteMode] = useState<'deactivate' | 'permanent'>('deactivate');
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -223,20 +224,35 @@ const AdminKnowledgeBase = () => {
     if (!deleteTitle) return;
 
     try {
-      // Deactivate all chunks with this title
-      const { error } = await supabase
-        .from("insurance_knowledge_base")
-        .update({ is_active: false })
-        .eq("title", deleteTitle);
-
-      if (error) throw error;
-
       const chunksCount = entries.filter(e => e.title === deleteTitle).length;
 
-      toast({
-        title: "Dokument odstránený",
-        description: `Deaktivovaných ${chunksCount} chunkov z dokumentu.`,
-      });
+      if (deleteMode === 'permanent') {
+        // Permanently delete all chunks with this title
+        const { error } = await supabase
+          .from("insurance_knowledge_base")
+          .delete()
+          .eq("title", deleteTitle);
+
+        if (error) throw error;
+
+        toast({
+          title: "Dokument trvalo odstránený",
+          description: `Trvalo odstránených ${chunksCount} chunkov z databázy.`,
+        });
+      } else {
+        // Deactivate all chunks with this title
+        const { error } = await supabase
+          .from("insurance_knowledge_base")
+          .update({ is_active: false })
+          .eq("title", deleteTitle);
+
+        if (error) throw error;
+
+        toast({
+          title: "Dokument deaktivovaný",
+          description: `Deaktivovaných ${chunksCount} chunkov z dokumentu.`,
+        });
+      }
 
       fetchEntries();
     } catch (error) {
@@ -248,6 +264,7 @@ const AdminKnowledgeBase = () => {
       });
     } finally {
       setDeleteTitle(null);
+      setDeleteMode('deactivate');
     }
   };
 
@@ -437,13 +454,28 @@ const AdminKnowledgeBase = () => {
                           {new Date(chunks[0].created_at).toLocaleDateString("sk-SK")}
                         </CardDescription>
                       </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setDeleteTitle(title)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setDeleteTitle(title);
+                            setDeleteMode('deactivate');
+                          }}
+                        >
+                          Deaktivovať
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setDeleteTitle(title);
+                            setDeleteMode('permanent');
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -486,18 +518,38 @@ const AdminKnowledgeBase = () => {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!deleteTitle} onOpenChange={() => setDeleteTitle(null)}>
+      <AlertDialog open={!!deleteTitle} onOpenChange={() => {
+        setDeleteTitle(null);
+        setDeleteMode('deactivate');
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Potvrdiť odstránenie</AlertDialogTitle>
+            <AlertDialogTitle>
+              {deleteMode === 'permanent' ? 'Potvrdiť trvalé odstránenie' : 'Potvrdiť deaktiváciu'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Naozaj chcete deaktivovať dokument "{deleteTitle}"? Všetkých {deleteTitle ? entries.filter(e => e.title === deleteTitle).length : 0} chunkov bude
-              skrytých zo znalostnej bázy.
+              {deleteMode === 'permanent' ? (
+                <>
+                  <strong>Upozornenie:</strong> Naozaj chcete <strong>TRVALO ODSTRÁNIŤ</strong> dokument "{deleteTitle}"? 
+                  Všetkých {deleteTitle ? entries.filter(e => e.title === deleteTitle).length : 0} chunkov bude 
+                  <strong> natrvalo vymazaných z databázy</strong>. Táto akcia sa nedá vrátiť späť!
+                </>
+              ) : (
+                <>
+                  Naozaj chcete deaktivovať dokument "{deleteTitle}"? Všetkých {deleteTitle ? entries.filter(e => e.title === deleteTitle).length : 0} chunkov bude
+                  skrytých zo znalostnej bázy (môžete ich znova aktivovať v databáze).
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Zrušiť</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Odstrániť</AlertDialogAction>
+            <AlertDialogAction 
+              onClick={handleDelete}
+              className={deleteMode === 'permanent' ? 'bg-destructive hover:bg-destructive/90' : ''}
+            >
+              {deleteMode === 'permanent' ? 'Trvalo odstrániť' : 'Deaktivovať'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

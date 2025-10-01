@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-// Simple PDF text extraction (no OCR)
-import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
+// Simple PDF text extraction using unpdf (workerless, edge-compatible)
+import { extractText } from "https://esm.sh/unpdf@0.12.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -208,53 +208,30 @@ serve(async (req) => {
   }
 });
 
-// Extract text from PDF using pdfjs (simple text layer extraction, no OCR)
+// Extract text from PDF using unpdf (workerless, edge-compatible)
 async function extractTextFromPDF(file: File): Promise<string> {
   console.log("Extracting text from PDF (text layer only, no OCR)...");
-  
-  // Configure PDF.js worker
-  (pdfjsLib as any).GlobalWorkerOptions.workerSrc = 
-    "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.js";
   
   const arrayBuffer = await file.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
   
-  // Load PDF document
-  const loadingTask = pdfjsLib.getDocument({
-    data: uint8Array,
-    useSystemFonts: true,
-    standardFontDataUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/standard_fonts/",
-  });
-  
-  const pdf = await loadingTask.promise;
-  const numPages = pdf.numPages;
-  console.log(`PDF has ${numPages} pages`);
-  
-  const textPromises = [];
-  
-  // Extract text from each page
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-    textPromises.push(
-      pdf.getPage(pageNum).then(async (page) => {
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map((item: any) => item.str)
-          .join(" ");
-        return pageText;
-      })
-    );
+  try {
+    // Use unpdf to extract text (works in Deno/edge without workers)
+    const { text, totalPages } = await extractText(uint8Array, {
+      mergePages: true
+    });
+    
+    console.log(`Extracted ${text.length} characters from ${totalPages} pages`);
+    
+    if (!text || text.trim().length < 50) {
+      throw new Error("PDF appears to be scanned/image-based. Please use a PDF with selectable text or convert to searchable PDF first using OCR software.");
+    }
+    
+    return text;
+  } catch (error) {
+    console.error("PDF extraction error:", error);
+    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}. Make sure the PDF has a searchable text layer.`);
   }
-  
-  const pageTexts = await Promise.all(textPromises);
-  const fullText = pageTexts.join("\n\n");
-  
-  console.log(`Extracted ${fullText.length} characters from ${numPages} pages`);
-  
-  if (!fullText || fullText.trim().length < 50) {
-    throw new Error("PDF appears to be scanned/image-based. Please use a PDF with selectable text or convert to searchable PDF first.");
-  }
-  
-  return fullText;
 }
 
 // Use AI to analyze document and suggest categories/policy types
