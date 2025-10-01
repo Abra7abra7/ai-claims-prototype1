@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
+// Simple PDF text extraction (no OCR)
+import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -207,128 +208,49 @@ serve(async (req) => {
   }
 });
 
-// Extract text from PDF using Google Document AI
-// Handles large PDFs by splitting them into chunks of 25 pages
+// Extract text from PDF using pdfjs (simple text layer extraction, no OCR)
 async function extractTextFromPDF(file: File): Promise<string> {
-  const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS2');
-  if (!googleCredentials) {
-    throw new Error('GOOGLE_CLOUD_CREDENTIALS2 not configured');
-  }
-
-  const credentials = JSON.parse(googleCredentials);
+  console.log("Extracting text from PDF (text layer only, no OCR)...");
   
-  // Load PDF and check page count
   const arrayBuffer = await file.arrayBuffer();
-  const pdfDoc = await PDFDocument.load(arrayBuffer);
-  const totalPages = pdfDoc.getPageCount();
+  const uint8Array = new Uint8Array(arrayBuffer);
   
-  console.log(`PDF has ${totalPages} pages`);
+  // Load PDF document
+  const loadingTask = pdfjsLib.getDocument({
+    data: uint8Array,
+    useSystemFonts: true,
+    standardFontDataUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/standard_fonts/",
+  });
   
-  const PAGE_LIMIT = 25; // Safe limit (Document AI allows 30, we use 25 for safety)
+  const pdf = await loadingTask.promise;
+  const numPages = pdf.numPages;
+  console.log(`PDF has ${numPages} pages`);
   
-  // If PDF is within limit, process normally
-  if (totalPages <= PAGE_LIMIT) {
-    return await processPDFWithDocumentAI(arrayBuffer, credentials);
+  const textPromises = [];
+  
+  // Extract text from each page
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    textPromises.push(
+      pdf.getPage(pageNum).then(async (page) => {
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(" ");
+        return pageText;
+      })
+    );
   }
   
-  // Split large PDF into chunks
-  console.log(`PDF exceeds ${PAGE_LIMIT} pages, splitting into chunks...`);
-  const extractedTexts: string[] = [];
+  const pageTexts = await Promise.all(textPromises);
+  const fullText = pageTexts.join("\n\n");
   
-  for (let startPage = 0; startPage < totalPages; startPage += PAGE_LIMIT) {
-    const endPage = Math.min(startPage + PAGE_LIMIT, totalPages);
-    console.log(`Processing pages ${startPage + 1} to ${endPage} of ${totalPages}`);
-    
-    // Create a new PDF with only the pages in this chunk
-    const chunkPdf = await PDFDocument.create();
-    const pages = await chunkPdf.copyPages(pdfDoc, Array.from({ length: endPage - startPage }, (_, i) => startPage + i));
-    pages.forEach(page => chunkPdf.addPage(page));
-    
-    // Convert chunk to bytes
-    const chunkBytes = await chunkPdf.save();
-    
-    // Process this chunk
-    const chunkText = await processPDFWithDocumentAI(chunkBytes, credentials);
-    extractedTexts.push(chunkText);
-    
-    console.log(`Extracted ${chunkText.length} characters from pages ${startPage + 1}-${endPage}`);
+  console.log(`Extracted ${fullText.length} characters from ${numPages} pages`);
+  
+  if (!fullText || fullText.trim().length < 50) {
+    throw new Error("PDF appears to be scanned/image-based. Please use a PDF with selectable text or convert to searchable PDF first.");
   }
-  
-  // Combine all extracted text
-  const fullText = extractedTexts.join('\n\n');
-  console.log(`Total extracted text: ${fullText.length} characters from ${totalPages} pages`);
   
   return fullText;
-}
-
-// Process a PDF (or PDF chunk) with Google Document AI
-async function processPDFWithDocumentAI(pdfBytes: ArrayBuffer | Uint8Array, credentials: any): Promise<string> {
-  // Convert to Uint8Array if needed
-  const uint8Array = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
-  
-  // Convert to base64
-  let binaryString = '';
-  const chunkSize = 8192;
-  for (let i = 0; i < uint8Array.length; i += chunkSize) {
-    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
-    binaryString += String.fromCharCode.apply(null, Array.from(chunk));
-  }
-  const base64Content = btoa(binaryString);
-
-  // Get access token
-  const now = Math.floor(Date.now() / 1000);
-  const jwtHeader = { alg: "RS256", typ: "JWT" };
-  const jwtClaim = {
-    iss: credentials.client_email,
-    scope: "https://www.googleapis.com/auth/cloud-platform",
-    aud: "https://oauth2.googleapis.com/token",
-    exp: now + 3600,
-    iat: now,
-  };
-
-  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: await createJWT(jwtHeader, jwtClaim, credentials.private_key),
-    }),
-  });
-
-  if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text();
-    console.error('Token error:', tokenResponse.status, errorText);
-    throw new Error(`Failed to get access token: ${tokenResponse.statusText} - ${errorText}`);
-  }
-
-  const { access_token } = await tokenResponse.json();
-
-  // Call Document AI
-  const processorUrl = "https://eu-documentai.googleapis.com/v1/projects/485328765227/locations/eu/processors/1b186d456b875b89:process";
-  
-  const documentAIResponse = await fetch(processorUrl, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${access_token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      skipHumanReview: true,
-      rawDocument: {
-        content: base64Content,
-        mimeType: 'application/pdf',
-      },
-    }),
-  });
-
-  if (!documentAIResponse.ok) {
-    const errorText = await documentAIResponse.text();
-    console.error('Document AI error:', documentAIResponse.status, errorText);
-    throw new Error(`Document AI processing failed: ${documentAIResponse.statusText} - ${errorText}`);
-  }
-
-  const result = await documentAIResponse.json();
-  return result.document?.text || '';
 }
 
 // Use AI to analyze document and suggest categories/policy types
@@ -423,62 +345,4 @@ Choose 1-3 most relevant items for each. Use Slovak terms.`
   }
 }
 
-// JWT helper functions
-async function createJWT(header: any, claim: any, privateKey: string): Promise<string> {
-  const encoder = new TextEncoder();
-  
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedClaim = base64UrlEncode(JSON.stringify(claim));
-  const message = `${encodedHeader}.${encodedClaim}`;
-  
-  const key = await importPrivateKey(privateKey);
-  const signature = await crypto.subtle.sign(
-    { name: "RSASSA-PKCS1-v1_5" },
-    key,
-    encoder.encode(message)
-  );
-  
-  return `${message}.${base64UrlEncode(signature)}`;
-}
-
-function base64UrlEncode(data: string | ArrayBuffer): string {
-  let binaryString = '';
-  
-  if (typeof data === 'string') {
-    const bytes = new TextEncoder().encode(data);
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-  } else {
-    const bytes = new Uint8Array(data);
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-  }
-  
-  return btoa(binaryString)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-}
-
-async function importPrivateKey(pem: string): Promise<CryptoKey> {
-  const pemContents = pem
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s/g, '');
-  
-  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-  
-  return await crypto.subtle.importKey(
-    'pkcs8',
-    binaryDer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-}
+// No longer needed - removed Google Document AI dependencies
