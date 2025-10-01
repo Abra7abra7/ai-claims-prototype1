@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -207,6 +208,7 @@ serve(async (req) => {
 });
 
 // Extract text from PDF using Google Document AI
+// Handles large PDFs by splitting them into chunks of 25 pages
 async function extractTextFromPDF(file: File): Promise<string> {
   const googleCredentials = Deno.env.get('GOOGLE_CLOUD_CREDENTIALS2');
   if (!googleCredentials) {
@@ -215,10 +217,56 @@ async function extractTextFromPDF(file: File): Promise<string> {
 
   const credentials = JSON.parse(googleCredentials);
   
-  // Convert file to base64
+  // Load PDF and check page count
   const arrayBuffer = await file.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
+  const pdfDoc = await PDFDocument.load(arrayBuffer);
+  const totalPages = pdfDoc.getPageCount();
   
+  console.log(`PDF has ${totalPages} pages`);
+  
+  const PAGE_LIMIT = 25; // Safe limit (Document AI allows 30, we use 25 for safety)
+  
+  // If PDF is within limit, process normally
+  if (totalPages <= PAGE_LIMIT) {
+    return await processPDFWithDocumentAI(arrayBuffer, credentials);
+  }
+  
+  // Split large PDF into chunks
+  console.log(`PDF exceeds ${PAGE_LIMIT} pages, splitting into chunks...`);
+  const extractedTexts: string[] = [];
+  
+  for (let startPage = 0; startPage < totalPages; startPage += PAGE_LIMIT) {
+    const endPage = Math.min(startPage + PAGE_LIMIT, totalPages);
+    console.log(`Processing pages ${startPage + 1} to ${endPage} of ${totalPages}`);
+    
+    // Create a new PDF with only the pages in this chunk
+    const chunkPdf = await PDFDocument.create();
+    const pages = await chunkPdf.copyPages(pdfDoc, Array.from({ length: endPage - startPage }, (_, i) => startPage + i));
+    pages.forEach(page => chunkPdf.addPage(page));
+    
+    // Convert chunk to bytes
+    const chunkBytes = await chunkPdf.save();
+    
+    // Process this chunk
+    const chunkText = await processPDFWithDocumentAI(chunkBytes, credentials);
+    extractedTexts.push(chunkText);
+    
+    console.log(`Extracted ${chunkText.length} characters from pages ${startPage + 1}-${endPage}`);
+  }
+  
+  // Combine all extracted text
+  const fullText = extractedTexts.join('\n\n');
+  console.log(`Total extracted text: ${fullText.length} characters from ${totalPages} pages`);
+  
+  return fullText;
+}
+
+// Process a PDF (or PDF chunk) with Google Document AI
+async function processPDFWithDocumentAI(pdfBytes: ArrayBuffer | Uint8Array, credentials: any): Promise<string> {
+  // Convert to Uint8Array if needed
+  const uint8Array = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+  
+  // Convert to base64
   let binaryString = '';
   const chunkSize = 8192;
   for (let i = 0; i < uint8Array.length; i += chunkSize) {
@@ -226,8 +274,6 @@ async function extractTextFromPDF(file: File): Promise<string> {
     binaryString += String.fromCharCode.apply(null, Array.from(chunk));
   }
   const base64Content = btoa(binaryString);
-  
-  console.log(`Base64 encoded PDF size: ${base64Content.length} characters, original size: ${uint8Array.length} bytes`);
 
   // Get access token
   const now = Math.floor(Date.now() / 1000);
@@ -256,8 +302,6 @@ async function extractTextFromPDF(file: File): Promise<string> {
   }
 
   const { access_token } = await tokenResponse.json();
-  
-  console.log('Successfully obtained access token for Document AI');
 
   // Call Document AI
   const processorUrl = "https://eu-documentai.googleapis.com/v1/projects/485328765227/locations/eu/processors/1b186d456b875b89:process";
@@ -284,11 +328,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
   }
 
   const result = await documentAIResponse.json();
-  const extractedText = result.document?.text || '';
-  
-  console.log(`Successfully extracted ${extractedText.length} characters from PDF`);
-  
-  return extractedText;
+  return result.document?.text || '';
 }
 
 // Use AI to analyze document and suggest categories/policy types
