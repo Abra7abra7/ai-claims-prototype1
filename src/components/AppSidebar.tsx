@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { 
   Home, 
   FileText, 
@@ -36,12 +36,20 @@ import { Avatar, AvatarFallback } from "./ui/avatar";
 export function AppSidebar() {
   const { state } = useSidebar();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [isAdmin, setIsAdmin] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [adminOpen, setAdminOpen] = useState(false);
 
   const collapsed = state === "collapsed";
+
+  // Keep admin section open if user is on admin page
+  useEffect(() => {
+    if (location.pathname.startsWith("/admin")) {
+      setAdminOpen(true);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     checkRole();

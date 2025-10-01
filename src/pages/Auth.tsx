@@ -59,22 +59,38 @@ export default function Auth() {
   const { toast } = useToast();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate("/");
-      }
-    });
+    checkSessionAndRedirect();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session) {
-        navigate("/");
+        await checkSessionAndRedirect();
       }
     });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const checkSessionAndRedirect = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      // Check if user is admin
+      const { data: adminRole } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      // Redirect admin to admin dashboard, others to main dashboard
+      if (adminRole) {
+        navigate("/admin");
+      } else {
+        navigate("/");
+      }
+    }
+  };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();

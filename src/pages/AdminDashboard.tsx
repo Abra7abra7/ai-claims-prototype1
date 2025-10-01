@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -89,6 +90,7 @@ const COLORS = {
 
 const AdminDashboard = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({
     totalClaims: 0,
     totalDocuments: 0,
@@ -116,7 +118,7 @@ const AdminDashboard = () => {
       // Check admin role first
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        window.location.href = "/auth";
+        navigate("/auth");
         return;
       }
 
@@ -128,7 +130,7 @@ const AdminDashboard = () => {
         .maybeSingle();
 
       if (!adminRole) {
-        window.location.href = "/";
+        navigate("/");
         return;
       }
 
