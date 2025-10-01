@@ -66,6 +66,14 @@ export default function Dashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
   const [searchQuery, setSearchQuery] = useState("");
+  const [stats, setStats] = useState<DashboardStats>({
+    totalClaims: 0,
+    totalDocuments: 0,
+    totalReports: 0,
+    processingDocuments: 0,
+    completedDocuments: 0,
+    pendingReviews: 0,
+  });
   const [newClaim, setNewClaim] = useState({
     claim_number: "",
     client_name: "",
@@ -221,7 +229,7 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Fetch claims
+      // Fetch claims (only user's own claims)
       const { data: claimsData, error: claimsError } = await supabase
         .from("claims")
         .select("*")
@@ -230,7 +238,7 @@ export default function Dashboard() {
 
       if (claimsError) throw claimsError;
 
-      // Fetch all documents
+      // Fetch all documents for user's claims
       const { data: docsData, error: docsError } = await supabase
         .from("documents")
         .select("*, claims!inner(created_by)")
@@ -238,13 +246,34 @@ export default function Dashboard() {
 
       if (docsError) throw docsError;
 
-      // Fetch all reports
+      // Fetch all reports for user's claims
       const { data: reportsData, error: reportsError } = await supabase
         .from("reports")
         .select("*, claims!inner(created_by)")
         .eq("claims.created_by", user.id);
 
       if (reportsError) throw reportsError;
+
+      // Calculate statistics
+      const totalDocuments = docsData?.length || 0;
+      const processingDocs = docsData?.filter(
+        (d) => d.status === "ocr_processing" || d.status === "anonymizing" || d.status === "ocr_complete" || d.status === "anonymized"
+      ).length || 0;
+      const completedDocs = docsData?.filter(
+        (d) => d.status === "report_generated"
+      ).length || 0;
+      const pendingReviewDocs = docsData?.filter(
+        (d) => d.status === "ready_for_review"
+      ).length || 0;
+
+      setStats({
+        totalClaims: claimsData?.length || 0,
+        totalDocuments,
+        totalReports: reportsData?.length || 0,
+        processingDocuments: processingDocs,
+        completedDocuments: completedDocs,
+        pendingReviews: pendingReviewDocs,
+      });
 
       // Build claims with details
       const claimsWithDetailsData: ClaimWithDetails[] = (claimsData || []).map((claim) => {
@@ -391,9 +420,60 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="space-y-6">
+        {/* Statistics Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Moje poistné udalosti</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-foreground">{stats.totalClaims}</div>
+              <p className="text-xs text-muted-foreground">Celkový počet claims</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Dokumenty</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-foreground">{stats.totalDocuments}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.processingDocuments} sa spracováva
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Čaká na kontrolu</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-foreground">{stats.pendingReviews}</div>
+              <p className="text-xs text-muted-foreground">Dokumenty na schválenie</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Dokončené</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-foreground">{stats.completedDocuments}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.totalReports} reportov vygenerovaných
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
         <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+            <h1 className="text-3xl font-bold text-foreground">Moje poistné udalosti</h1>
             <p className="text-muted-foreground mt-1">
               Prehľad vašich poistných udalostí a analýz
             </p>

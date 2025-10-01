@@ -113,7 +113,26 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
 
-      // Fetch basic counts
+      // Check admin role first
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        window.location.href = "/auth";
+        return;
+      }
+
+      const { data: adminRole } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      if (!adminRole) {
+        window.location.href = "/";
+        return;
+      }
+
+      // Fetch ALL data (admin sees everything)
       const [claimsRes, docsRes, reportsRes, usersRes] = await Promise.all([
         supabase.from("claims").select("*", { count: "exact" }),
         supabase.from("documents").select("*", { count: "exact" }),
@@ -166,28 +185,31 @@ const AdminDashboard = () => {
       });
       const aiRecData = Object.values(recommendationsByDate);
 
-      // Fetch recent activity
-      const { data: recentClaims } = await supabase
+      // Fetch recent activity - ALL claims for admin
+      const { data: recentClaimsData } = await supabase
         .from("claims")
-        .select(`
-          id,
-          claim_number,
-          client_name,
-          status,
-          created_at,
-          documents:documents(count)
-        `)
+        .select("*")
         .order("created_at", { ascending: false })
         .limit(10);
 
-      const activityData = recentClaims?.map((claim: any) => ({
-        id: claim.id,
-        claim_number: claim.claim_number,
-        client_name: claim.client_name,
-        status: claim.status,
-        created_at: claim.created_at,
-        document_count: claim.documents[0]?.count || 0,
-      })) || [];
+      // Count documents for each claim
+      const activityData = await Promise.all(
+        (recentClaimsData || []).map(async (claim) => {
+          const { count } = await supabase
+            .from("documents")
+            .select("*", { count: "exact", head: true })
+            .eq("claim_id", claim.id);
+
+          return {
+            id: claim.id,
+            claim_number: claim.claim_number,
+            client_name: claim.client_name,
+            status: claim.status,
+            created_at: claim.created_at,
+            document_count: count || 0,
+          };
+        })
+      );
 
       // Calculate success rate and pending reviews
       const successfulDocs = docs?.filter(
@@ -255,44 +277,15 @@ const AdminDashboard = () => {
           </Badge>
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = "/admin/analysis-types"}>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary" />
-                Typy analýz
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Spravovať typy AI analýz a systémové prompty</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = "/admin/knowledge-base"}>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Database className="h-5 w-5 text-primary" />
-                Vektorová znalostná báza
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Spravovať dokumenty a kontextové informácie</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = "/settings"}>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                Nastavenia
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Používatelia a systémové nastavenia</p>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Overview Description */}
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              Tento admin dashboard zobrazuje <strong>všetky dáta v systéme</strong> vrátane všetkých poistných udalostí, 
+              dokumentov a reportov od všetkých používateľov. Máte plný prehľad o celkovej aktivite a výkonnosti systému.
+            </p>
+          </CardContent>
+        </Card>
 
         {/* KPI Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
