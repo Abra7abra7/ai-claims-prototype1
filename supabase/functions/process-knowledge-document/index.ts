@@ -215,6 +215,8 @@ async function extractTextFromPDF(file: File): Promise<string> {
     binaryString += String.fromCharCode.apply(null, Array.from(chunk));
   }
   const base64Content = btoa(binaryString);
+  
+  console.log(`Base64 encoded PDF size: ${base64Content.length} characters, original size: ${uint8Array.length} bytes`);
 
   // Get access token
   const now = Math.floor(Date.now() / 1000);
@@ -237,10 +239,14 @@ async function extractTextFromPDF(file: File): Promise<string> {
   });
 
   if (!tokenResponse.ok) {
-    throw new Error(`Failed to get access token: ${tokenResponse.statusText}`);
+    const errorText = await tokenResponse.text();
+    console.error('Token error:', tokenResponse.status, errorText);
+    throw new Error(`Failed to get access token: ${tokenResponse.statusText} - ${errorText}`);
   }
 
   const { access_token } = await tokenResponse.json();
+  
+  console.log('Successfully obtained access token for Document AI');
 
   // Call Document AI
   const processorUrl = "https://eu-documentai.googleapis.com/v1/projects/485328765227/locations/eu/processors/1b186d456b875b89:process";
@@ -252,6 +258,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      skipHumanReview: true,
       rawDocument: {
         content: base64Content,
         mimeType: 'application/pdf',
@@ -260,11 +267,17 @@ async function extractTextFromPDF(file: File): Promise<string> {
   });
 
   if (!documentAIResponse.ok) {
-    throw new Error(`Document AI processing failed: ${documentAIResponse.statusText}`);
+    const errorText = await documentAIResponse.text();
+    console.error('Document AI error:', documentAIResponse.status, errorText);
+    throw new Error(`Document AI processing failed: ${documentAIResponse.statusText} - ${errorText}`);
   }
 
   const result = await documentAIResponse.json();
-  return result.document?.text || '';
+  const extractedText = result.document?.text || '';
+  
+  console.log(`Successfully extracted ${extractedText.length} characters from PDF`);
+  
+  return extractedText;
 }
 
 // Use AI to analyze document and suggest categories/policy types
