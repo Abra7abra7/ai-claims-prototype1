@@ -212,6 +212,10 @@ serve(async (req) => {
 async function extractTextFromPDF(file: File): Promise<string> {
   console.log("Extracting text from PDF (text layer only, no OCR)...");
   
+  // Configure PDF.js worker
+  (pdfjsLib as any).GlobalWorkerOptions.workerSrc = 
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.js";
+  
   const arrayBuffer = await file.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
   

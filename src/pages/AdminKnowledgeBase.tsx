@@ -42,7 +42,7 @@ const AdminKnowledgeBase = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteTitle, setDeleteTitle] = useState<string | null>(null);
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -220,19 +220,22 @@ const AdminKnowledgeBase = () => {
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
+    if (!deleteTitle) return;
 
     try {
+      // Deactivate all chunks with this title
       const { error } = await supabase
         .from("insurance_knowledge_base")
         .update({ is_active: false })
-        .eq("id", deleteId);
+        .eq("title", deleteTitle);
 
       if (error) throw error;
 
+      const chunksCount = entries.filter(e => e.title === deleteTitle).length;
+
       toast({
-        title: "Záznam odstránený",
-        description: "Znalostný záznam bol deaktivovaný.",
+        title: "Dokument odstránený",
+        description: `Deaktivovaných ${chunksCount} chunkov z dokumentu.`,
       });
 
       fetchEntries();
@@ -240,11 +243,11 @@ const AdminKnowledgeBase = () => {
       console.error("Error deleting entry:", error);
       toast({
         title: "Chyba",
-        description: "Nepodarilo sa odstrániť záznam.",
+        description: "Nepodarilo sa odstrániť dokument.",
         variant: "destructive",
       });
     } finally {
-      setDeleteId(null);
+      setDeleteTitle(null);
     }
   };
 
@@ -437,7 +440,7 @@ const AdminKnowledgeBase = () => {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => setDeleteId(chunks[0].id)}
+                        onClick={() => setDeleteTitle(title)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -483,13 +486,13 @@ const AdminKnowledgeBase = () => {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+      <AlertDialog open={!!deleteTitle} onOpenChange={() => setDeleteTitle(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Potvrdiť odstránenie</AlertDialogTitle>
             <AlertDialogDescription>
-              Naozaj chcete deaktivovať tento dokument? Všetky jeho chunky budú
-              skryté zo znalostnej bázy.
+              Naozaj chcete deaktivovať dokument "{deleteTitle}"? Všetkých {deleteTitle ? entries.filter(e => e.title === deleteTitle).length : 0} chunkov bude
+              skrytých zo znalostnej bázy.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
