@@ -160,6 +160,57 @@ export type Database = {
         }
         Relationships: []
       }
+      insurance_knowledge_base: {
+        Row: {
+          categories: string[] | null
+          chunk_index: number
+          chunk_text: string
+          content: string
+          created_at: string
+          created_by: string
+          embedding: string | null
+          id: string
+          is_active: boolean
+          metadata: Json | null
+          policy_types: string[] | null
+          source_document: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          categories?: string[] | null
+          chunk_index: number
+          chunk_text: string
+          content: string
+          created_at?: string
+          created_by: string
+          embedding?: string | null
+          id?: string
+          is_active?: boolean
+          metadata?: Json | null
+          policy_types?: string[] | null
+          source_document?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          categories?: string[] | null
+          chunk_index?: number
+          chunk_text?: string
+          content?: string
+          created_at?: string
+          created_by?: string
+          embedding?: string | null
+          id?: string
+          is_active?: boolean
+          metadata?: Json | null
+          policy_types?: string[] | null
+          source_document?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       processed_documents: {
         Row: {
           anonymized_text: string | null
@@ -324,12 +375,122 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      binary_quantize: {
+        Args: { "": string } | { "": unknown }
+        Returns: unknown
+      }
+      halfvec_avg: {
+        Args: { "": number[] }
+        Returns: unknown
+      }
+      halfvec_out: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      halfvec_send: {
+        Args: { "": unknown }
+        Returns: string
+      }
+      halfvec_typmod_in: {
+        Args: { "": unknown[] }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      hnsw_bit_support: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      hnsw_halfvec_support: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      hnsw_sparsevec_support: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      hnswhandler: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ivfflat_bit_support: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ivfflat_halfvec_support: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      ivfflathandler: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      l2_norm: {
+        Args: { "": unknown } | { "": unknown }
+        Returns: number
+      }
+      l2_normalize: {
+        Args: { "": string } | { "": unknown } | { "": unknown }
+        Returns: string
+      }
+      search_insurance_knowledge: {
+        Args: {
+          filter_categories?: string[]
+          filter_policy_types?: string[]
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          categories: string[]
+          chunk_text: string
+          id: string
+          metadata: Json
+          policy_types: string[]
+          similarity: number
+          title: string
+        }[]
+      }
+      sparsevec_out: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      sparsevec_send: {
+        Args: { "": unknown }
+        Returns: string
+      }
+      sparsevec_typmod_in: {
+        Args: { "": unknown[] }
+        Returns: number
+      }
+      vector_avg: {
+        Args: { "": number[] }
+        Returns: string
+      }
+      vector_dims: {
+        Args: { "": string } | { "": unknown }
+        Returns: number
+      }
+      vector_norm: {
+        Args: { "": string }
+        Returns: number
+      }
+      vector_out: {
+        Args: { "": string }
+        Returns: unknown
+      }
+      vector_send: {
+        Args: { "": string }
+        Returns: string
+      }
+      vector_typmod_in: {
+        Args: { "": unknown[] }
+        Returns: number
       }
     }
     Enums: {
